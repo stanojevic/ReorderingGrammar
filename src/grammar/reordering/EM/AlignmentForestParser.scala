@@ -22,7 +22,7 @@ object AlignmentForestParser {
   }
   defaultNonTerms.lock()
   
-  val defaultLatentMappings = defaultNonTerms.allInts.map{ x => x->Set(x)}.toMap
+  val defaultLatentMappings = defaultNonTerms.allInts.map{ x => x->List(x)}.toMap
   
   def parse(sent:List[String], a:Set[(Int, Int)], g:Grammar) : Chart = {
     
@@ -46,10 +46,15 @@ object AlignmentForestParser {
     val start = 0
     val end = chart.size - 1
     val lhs = g.nonTerms("ROOT")
-    val edges:Set[Edge] = chart(start)(end).
-      filter{ case (k:grammar.reordering.representation.NonTerm, v:NonTermSpan) => v.edges.size>0}.
-      flatMap{ case (key, value) => g.getAllLatentInnerRules(lhs, List(key)).map{Edge(start, end, _, List())}}.toSet
-    chart(start)(end) += lhs -> NonTermSpan(edges)
+//    val edges:Set[Edge] = chart(start)(end).
+//      filter{ case (k:grammar.reordering.representation.NonTerm, v:NonTermSpan) => v.edges.size>0}.
+//      flatMap{ case (key, value) => g.getAllLatentInnerRules(lhs, List(key)).map{Edge(start, end, _, List())}}.toSet
+    val edges:Set[Edge] = chart(start)(end).filter(_._2.edges.size>0).keySet.flatMap{ rhs =>
+      g.latentMappings(lhs).map{latentLhs => Edge(start, end, g.getInnerRule(latentLhs, List(rhs)), List())}
+    }
+    for(latentLhs <- g.latentMappings(lhs)){
+      chart(start)(end) += latentLhs -> NonTermSpan(edges.filter(_.rule.lhs == latentLhs))
+    }
   }
   
   private def opToStr(op:List[Int], motherSize:Int, mothersChild:Int) : String = {
@@ -98,11 +103,22 @@ object AlignmentForestParser {
         val lhs = g.nonTerms(lhsStr)
         val rules = g.getAllLatentPretermRules(lhs, g.voc(words(pos)))
         val edges = rules.map{rule => Edge(pos, pos, rule, List())}
-        if(chart(pos)(pos) contains lhs){
-          chart(pos)(pos)(lhs).edges ++= edges
-        }else{
-          chart(pos)(pos) += lhs -> NonTermSpan(edges)
+
+        edges.groupBy(_.rule.lhs).foreach{ case (latentLhs, latentEdges:Set[Edge]) =>
+          if(chart(pos)(pos) contains latentLhs){
+            chart(pos)(pos)(latentLhs).addEdges(latentEdges)
+          }else{
+            chart(pos)(pos) += latentLhs -> NonTermSpan(latentEdges)
+          }
         }
+
+//        for(latentLhs <- g.latentMappings(lhs)){
+//          if(chart(pos)(pos) contains latentLhs){
+//            chart(pos)(pos)(latentLhs).addEdges(edges.filter(_.rule.lhs == latentLhs))
+//          }else{
+//            chart(pos)(pos) += latentLhs -> NonTermSpan(edges.filter(_.rule.lhs == latentLhs))
+//          }
+//        }
 
       case NonTerm(start, end, min, max, op, children) => {
 
@@ -124,11 +140,21 @@ object AlignmentForestParser {
                 val rules = g.getAllLatentInnerRules(lhs, rhs)
                 edges ++= rules.map{rule => Edge(spanStart,  spanEnd, rule, List(splitPoint))}
               }
-              if(chart(spanStart)(spanEnd) contains lhs){
-                chart(spanStart)(spanEnd)(lhs).edges ++= edges
-              }else{
-                chart(spanStart)(spanEnd) += lhs -> NonTermSpan(edges)
+
+              edges.groupBy(_.rule.lhs).foreach{ case (latentLhs, latentEdges:Set[Edge]) =>
+                if(chart(spanStart)(spanEnd) contains latentLhs){
+                  chart(spanStart)(spanEnd)(latentLhs).addEdges(latentEdges)
+                }else{
+                  chart(spanStart)(spanEnd) += latentLhs -> NonTermSpan(latentEdges)
+                }
               }
+//              for(latentLhs <- g.latentMappings(lhs)){
+//                if(chart(spanStart)(spanEnd) contains latentLhs){
+//                  chart(spanStart)(spanEnd)(latentLhs).addEdges(edges.filter(_.rule.lhs == latentLhs))
+//                }else{
+//                  chart(spanStart)(spanEnd) += latentLhs -> NonTermSpan(edges.filter(_.rule.lhs == latentLhs))
+//                }
+//              }
             }
           }
         }else{
@@ -136,7 +162,9 @@ object AlignmentForestParser {
           val rhs = children.zipWithIndex.map{ case (child, index) => g.nonTerms(nodeToStr(child, children.size, index+1))}
           val rules = g.getAllLatentInnerRules(lhs, rhs)
           val edges = rules.map{rule => Edge(start, end, rule, splitPoints)}
-          chart(start)(end)(lhs).edges ++= edges
+          edges.groupBy(_.rule.lhs).foreach{ case (latentLhs, latentEdges:Set[Edge]) =>
+            chart(start)(end)(latentLhs).addEdges(latentEdges)
+          }
         }
       }
     }

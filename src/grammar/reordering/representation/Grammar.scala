@@ -1,12 +1,19 @@
 package grammar.reordering.representation
 
 class Grammar ( rulesArg:Set[Rule],
-                val latentMappings:Map[NonTerm,Set[NonTerm]],
+                val latentMappings:Map[NonTerm,List[NonTerm]],
                 val voc:IntMapping,
                 val nonTerms:IntMapping,
+                val latestSplits:List[(String, String, String, Double, Double)],
                 dummy:Boolean=false) {
   
-  var locked = false
+  val latestSplitsInts:List[(NonTerm, NonTerm, NonTerm, Double, Double)] = latestSplits.map{ case (mother:String, split1:String, split2:String, p1Raw:Double, p2Raw:Double) =>
+    (nonTerms(mother), nonTerms(split1), nonTerms(split2), p1Raw, p2Raw)
+  }
+  
+  def copyConstructor(newRulesArg:Set[Rule]) : Grammar = {
+    new Grammar(newRulesArg, latentMappings, voc, nonTerms, latestSplits, dummy)
+  }
   
   val innerRules:Map[(NonTerm, List[NonTerm]), InnerRule] = rulesArg.flatMap{
     case innerRule   @ InnerRule  (lhs, rhs , _) => List((lhs, rhs ) -> innerRule)
@@ -39,24 +46,23 @@ class Grammar ( rulesArg:Set[Rule],
     }
   }
   
-  private def allCombinations[A](input:List[Set[A]]) : Set[List[A]] = {
-    if(input.size == 1)
-      input.head.map{List(_)}
-    else
-      allCombinations(input.tail).flatMap{sequel => input.head.map{_::sequel}}
-  }
-  
   def getAllLatentInnerRules(lhsOriginal:NonTerm, rhsOriginal:List[NonTerm]) : Set[Rule] = {
+    for(el <- rhsOriginal){
+      if(nonTerms(el).endsWith("_0") || nonTerms(el).endsWith("_1"))
+        println(el+ " " + nonTerms(el))
+    }
     if(dummy){
       Set(InnerRule(lhsOriginal, rhsOriginal, 0.1))
     }else{
       var rules = Set[Rule]()
       for(lhs <- latentMappings(lhsOriginal)){
-        val rhsVersions = allCombinations(rhsOriginal.map{latentMappings(_)})
+        val rhsVersions = Grammar.allCombinations(rhsOriginal.map{latentMappings(_)})
 
         for(rhs <- rhsVersions){
           val representation = (lhs, rhs)
-          rules += innerRules(representation)
+          if(innerRules contains representation){
+            rules += innerRules(representation)
+          }
         }
       }
       rules
@@ -70,7 +76,9 @@ class Grammar ( rulesArg:Set[Rule],
       var rules = Set[Rule]()
       for(lhs <- latentMappings(lhsOriginal)){
         val representation = (lhs, word)
-        rules += pretermRules(representation)
+        if(pretermRules contains representation){
+          rules += pretermRules(representation)
+        }
       }
       rules
     }
@@ -86,5 +94,23 @@ class Grammar ( rulesArg:Set[Rule],
       }
     }
   }
+  
+  override
+  def toString() : String =
+    this.allRules.toList.
+      sortBy(rule => nonTerms(rule.lhs)).
+      map{rule:Rule => rule.toString(voc, nonTerms)}.
+      mkString("\n")
 
+}
+
+object Grammar{
+  
+  def allCombinations[A](input:List[List[A]]) : List[List[A]] = {
+    if(input.size == 1)
+      input.head.map{List(_)}
+    else
+      allCombinations(input.tail).flatMap{sequel => input.head.map{_::sequel}}
+  }
+  
 }

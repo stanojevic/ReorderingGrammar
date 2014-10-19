@@ -26,6 +26,7 @@ class AlignmentForestParserTest extends FlatSpec with ShouldMatchers{
         latentMappings = AlignmentForestParser.defaultLatentMappings,
         nonTerms = AlignmentForestParser.defaultNonTerms,
         voc = voc,
+        latestSplits = List(),
         dummy=true
         )
     

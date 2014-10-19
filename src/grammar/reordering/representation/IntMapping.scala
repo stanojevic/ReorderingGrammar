@@ -38,5 +38,8 @@ class IntMapping {
   
   def allStrings() : Set[String] = voc.keySet
   def allInts() : Set[Int] = inverseVoc.keySet
-
+  
+  def contains(index:Int  ) : Boolean = inverseVoc contains index
+  def contains(word:String) : Boolean =        voc contains word
+  
 }
