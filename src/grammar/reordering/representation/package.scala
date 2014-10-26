@@ -6,21 +6,21 @@ package object representation {
   
   type NonTerm = Int
   type Word    = Int
-  type Probability = Double
-  type LogProbability = Double
+  type Prob = Double
+  type LogProb = Double
   
-  sealed abstract class Rule(val lhs:NonTerm, val prob:Probability) {
-    val logProb:LogProbability = Math.log(prob)
+  sealed abstract class Rule(val lhs:NonTerm, val prob:Prob) {
+    val logProb:LogProb = Math.log(prob)
     def toString(voc:IntMapping, nonTerms:IntMapping) : String
   }
-  case class PretermRule(leftHandSide : NonTerm,  word:Word, p:Probability = 0.1) extends Rule(leftHandSide, p) {
+  case class PretermRule(leftHandSide : NonTerm,  word:Word, p:Prob = 0.1) extends Rule(leftHandSide, p) {
     def toString(voc:IntMapping, nonTerms:IntMapping) : String = {
       val lhsStr = nonTerms(lhs)
       val rhsStr = voc(word)
       s"$lhsStr -> '$rhsStr' | $prob"
     }
   }
-  case class InnerRule(leftHandSide : NonTerm,  rhs:List[NonTerm], p:Probability = 0.1) extends Rule(leftHandSide, p) {
+  case class InnerRule(leftHandSide : NonTerm,  rhs:List[NonTerm], p:Prob = 0.1) extends Rule(leftHandSide, p) {
     def toString(voc:IntMapping, nonTerms:IntMapping) : String = {
       val lhsStr = nonTerms(lhs)
       val rhsStr = rhs.map{nonTerms(_)}.mkString(" ")
@@ -28,7 +28,7 @@ package object representation {
     }
   }
   
-  class NonTermSpan(var inside:LogProbability = LogNil, var outside:LogProbability = LogNil){
+  class NonTermSpan(var inside:LogProb = LogNil, var outside:LogProb = LogNil){
     
     private var edgesContainer:Set[Edge] = Set()
     
@@ -47,7 +47,7 @@ package object representation {
     }
   }
 
-  case class Edge(start:Int, end:Int, rule:Rule, splits:List[Int], var inside:LogProbability = LogNil) {
+  case class Edge(start:Int, end:Int, rule:Rule, splits:List[Int], var inside:LogProb = LogNil) {
     def toString(voc:IntMapping, nonTerms:IntMapping) : String = {
       s"[$start $end] splits=$splits " + rule.toString(voc, nonTerms)
     }

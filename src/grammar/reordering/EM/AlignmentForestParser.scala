@@ -163,7 +163,11 @@ object AlignmentForestParser {
           val rules = g.getAllLatentInnerRules(lhs, rhs)
           val edges = rules.map{rule => Edge(start, end, rule, splitPoints)}
           edges.groupBy(_.rule.lhs).foreach{ case (latentLhs, latentEdges:Set[Edge]) =>
-            chart(start)(end)(latentLhs).addEdges(latentEdges)
+            if(chart(start)(end) contains latentLhs){
+              chart(start)(end)(latentLhs).addEdges(latentEdges)
+            }else{
+              chart(start)(end) += latentLhs -> NonTermSpan(latentEdges)
+            }
           }
         }
       }

@@ -108,8 +108,8 @@ object InsideOutside {
 
     val (
         expectedCounts:Map[Rule, Double],
-        mergeLikelihood:Map[(NonTerm, NonTerm, NonTerm), LogProbability],
-        allSplitLikelihood:LogProbability) = trainingBatches.map{ miniBatch:List[(String, String)] =>
+        mergeLikelihood:Map[(NonTerm, NonTerm, NonTerm), LogProb],
+        allSplitLikelihood:LogProb) = trainingBatches.map{ miniBatch:List[(String, String)] =>
       miniBatch.map{ case (sent, alignment) =>
 
         val a = AlignmentCanonicalParser.extractAlignment(alignment)
@@ -155,9 +155,9 @@ object InsideOutside {
   }
   
   private def sumExpectations(
-      a:(Map[Rule, Double], Map[(NonTerm, NonTerm, NonTerm), LogProbability], LogProbability),
-      b:(Map[Rule, Double], Map[(NonTerm, NonTerm, NonTerm), LogProbability], LogProbability))
-      : (Map[Rule, Double], Map[(NonTerm, NonTerm, NonTerm), LogProbability], LogProbability) = { 
+      a:(Map[Rule, Double], Map[(NonTerm, NonTerm, NonTerm), LogProb], LogProb),
+      b:(Map[Rule, Double], Map[(NonTerm, NonTerm, NonTerm), LogProb], LogProb))
+      : (Map[Rule, Double], Map[(NonTerm, NonTerm, NonTerm), LogProb], LogProb) = { 
     val (aExp, aMerge, aLikelihood) = a
     val (bExp, bMerge, bLikelihood) = b
     val cExp = (aExp.keySet ++ bExp.keySet).map{key => key -> (aExp.getOrElse(key, 0.0) + bExp.getOrElse(key, 0.0))}.toMap
@@ -212,10 +212,10 @@ object InsideOutside {
     newGrammar
   }
   
-  private def computeMergeLikelihood(chart:Chart, g:Grammar) : Map[(NonTerm, NonTerm, NonTerm), LogProbability] = {
+  private def computeMergeLikelihood(chart:Chart, g:Grammar) : Map[(NonTerm, NonTerm, NonTerm), LogProb] = {
     val n = chart.size
 
-    val mergeLikelihoodAcc = scala.collection.mutable.Map[(NonTerm, NonTerm, NonTerm), LogProbability]().withDefaultValue(LogNil)
+    val mergeLikelihoodAcc = scala.collection.mutable.Map[(NonTerm, NonTerm, NonTerm), LogProb]().withDefaultValue(LogNil)
 
     for(span <- 1 to n){
       for(i <- 0 until n-span+1){
@@ -231,8 +231,8 @@ object InsideOutside {
           }
           if(chart(i)(j) contains split1){
 
-            val p1Log = Math.log( p1Raw/(p1Raw + p2Raw) )
-            val p2Log = Math.log( p2Raw/(p1Raw + p2Raw) )
+            val p1Log = log( p1Raw/(p1Raw + p2Raw) )
+            val p2Log = log( p2Raw/(p1Raw + p2Raw) )
 
             val A1InLog  = chart(i)(j)(split1).inside 
             val A1OutLog = chart(i)(j)(split1).inside 
@@ -246,7 +246,7 @@ object InsideOutside {
             val mergeLikelihoodLogPartial = AInLog+AOutLog
             val splitLikelihoodLogPartial = logSumExp((A1InLog+A1OutLog), (A2InLog+A2OutLog))
             
-            // val mergeLikelihoodLogComplete = Math.log(Math.exp(splitLikelihoodLogComplete)-Math.exp(splitLikelihoodLogPartial)+Math.exp(mergeLikelihoodLogPartial))
+            // val mergeLikelihoodLogComplete = Math.log(eexp(splitLikelihoodLogComplete)-eexp(splitLikelihoodLogPartial)+eexp(mergeLikelihoodLogPartial))
             val mergeLikelihoodLogComplete = logSumExp(logSubstractExpWithLog1p(splitLikelihoodLogComplete, splitLikelihoodLogPartial), mergeLikelihoodLogPartial)
             
             mergeLikelihoodAcc( (mother, split1, split2) ) += mergeLikelihoodLogComplete - splitLikelihoodLogComplete
@@ -261,7 +261,7 @@ object InsideOutside {
   
   private def computeExpectedCountPerChart(chart:Chart, nonTerms:IntMapping) : Map[Rule, Double] = {
     val n = chart.size
-    val sentProb = Math.exp(chart(0)(n-1)(nonTerms("ROOT")).inside)
+    val sentProb = eexp(chart(0)(n-1)(nonTerms("ROOT")).inside)
     
     val ruleCountAcc = scala.collection.mutable.Map[Rule, Double]().withDefaultValue(0.0)
     
@@ -271,7 +271,7 @@ object InsideOutside {
         
         for(nonTermSpan <- chart(i)(j).values){
           nonTermSpan.edges.groupBy(_.rule).foreach{ case (rule:Rule, edges:List[Edge]) =>
-            ruleCountAcc(rule) += Math.exp(nonTermSpan.outside + logSumExp(edges.map{_.inside}))
+            ruleCountAcc(rule) += eexp(nonTermSpan.outside + logSumExp(edges.map{_.inside}))
           }
         }
       }

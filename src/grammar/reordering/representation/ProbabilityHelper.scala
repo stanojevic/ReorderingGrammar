@@ -22,7 +22,7 @@ object ProbabilityHelper {
     
     val x = a-b
     
-    val log1pexp = if(x<LogInfinitecimal) Math.log1p(0.0-2.0) else Math.log1p(Math.exp(x)-2.0)
+    val log1pexp = Math.log1p(eexp(x)-2.0)
     
     val result = b+log1pexp
 
@@ -41,10 +41,24 @@ object ProbabilityHelper {
     
     val x = a-b
     
-    val log1pexp = if(x<LogInfinitecimal) 0.0 else Math.log1p(Math.exp(x))
+    val log1pexp = Math.log1p(eexp(x))
     // val log1pexp = if(x<LogInfinitecimal) 0.0 else Math.log(1+Math.exp(x))
 
     b+log1pexp
+  }
+  
+  def log(x:Double) : Double = {
+    if(x==0)
+      LogNil
+    else
+      Math.log(x)
+  }
+  
+  def eexp(x:Double) : Double = {
+    if(x<LogInfinitecimal)
+      0.0
+    else
+      Math.exp(x)
   }
   
   def logSumExp(x: Double*): Double = 
