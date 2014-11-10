@@ -109,7 +109,11 @@ object AlignmentCanonicalParser {
   }
   
   private def opToStr(op:List[Int]) : String = {
-    "<"+op.mkString(",")+">"
+    if(op == List(0,0)){
+      "ROOT"
+    }else{
+      "<"+op.mkString(",")+">"
+    }
   }
   
   private def printDotTree(pw:PrintStream, tree:TreeNode, graphLabel:String, nodeId:String="node0") : List[(String, Term)] = {
@@ -120,7 +124,7 @@ object AlignmentCanonicalParser {
     val terminalColor = "lightblue2"
 
     tree match {
-      case NonTerm(start, end, min, max, operator, children) =>
+      case NonTerm(start, end, _, _, operator, children) =>
         if(nodeId == "node0"){
           pw.println("graph { ")
           pw.println("  label=\""+graphLabel+"\"")
@@ -133,7 +137,7 @@ object AlignmentCanonicalParser {
         children.zipWithIndex.foreach{ case (child, index) =>
           val childName = nodeId+index
           child match {
-            case NonTerm(start, end, min, max, operator, children) =>
+            case NonTerm(start, end, _, _, operator, children) =>
               terms ++= printDotTree(pw, child, graphLabel, childName)
               pw.println(nodeId+" -- "+childName+" ;")
             case term @ Term(position, el) =>

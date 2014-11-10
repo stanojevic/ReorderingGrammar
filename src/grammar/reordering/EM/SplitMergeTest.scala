@@ -8,7 +8,8 @@ import grammar.reordering.representation.NonTerm
 import grammar.reordering.representation.Grammar
 import grammar.reordering.representation.`package`.InnerRule
 import grammar.reordering.representation.`package`.PretermRule
-import grammar.reordering.representation.Grammar
+import grammar.reordering.representation.Probability
+import grammar.reordering.representation.Probability.{LogNil, LogOne}
 import java.io.PrintWriter
 
 class SplitMergeTest extends FlatSpec with ShouldMatchers{
@@ -28,16 +29,16 @@ class SplitMergeTest extends FlatSpec with ShouldMatchers{
 
   "splitting and training" should "not break" in {
     val sents = List(
-        "Nekakva recenica koja nema mnogo smisla",
-        "Nekakva recenica koja nema mnogo smisla",
-        "Nekakva recenica koja nema mnogo smisla",
-        "Nekakva recenica koja nema mnogo smisla"
+        "Nekakva recenica koja nema mnogo smisla"//,
+        //"Nekakva recenica koja nema mnogo smisla",
+        //"Nekakva recenica koja nema mnogo smisla",
+        //"Nekakva recenica koja nema mnogo smisla"
         )
     val alignments = List(
-        "1-1 2-0 3-0 4-0",
-        "1-1 2-0 3-1 4-0",
-        "1-1 2-0 3-2 4-0",
-        "1-3 2-0 3-3 4-1"
+        "1-1 2-0 3-0 4-0"//,
+        //"1-1 2-0 3-1 4-0",
+        //"1-1 2-0 3-2 4-0",
+        //"1-3 2-0 3-3 4-1"
         )
 
     val batchSize = 1
@@ -50,45 +51,47 @@ class SplitMergeTest extends FlatSpec with ShouldMatchers{
     val gSplitInit4 = SplitMerge.split(gSplitInit3, Map().withDefaultValue(1.0))
     
     var grammars = List[Grammar](gSplitInit4)
-    var likelihoods = List[Double](Math.log(0.0))
-    var mergeLikelihoods = List[Map[(NonTerm, NonTerm, NonTerm), Double]]()
+    var likelihoods = List[Probability](LogNil)
+    var mergeLikelihoods = List[Map[(NonTerm, NonTerm, NonTerm), Probability]]()
     
     var iteration = 1
-    var difference = 1.0
+    var difference = LogOne
     
     // val limit = 0.000000000000000000000000001
     val limit = Double.NegativeInfinity 
 
-    while(difference>=limit && iteration < 30){
+    while(difference.toDouble>=limit && iteration < 30){
       println(s"Starting training iteration $iteration")
       val (expectedCounts, mergeLikelihood, likelihood) = InsideOutside.expectation(sents, alignments, grammars.head, batchSize, parallel)
       val gNew = InsideOutside.maximization(grammars.head, expectedCounts)
       
       difference = likelihood - likelihoods.head
       
-      if(difference>=limit){
+      if(difference.toDouble>=limit){
         grammars ::= gNew
         likelihoods ::= likelihood
         mergeLikelihoods ::= mergeLikelihood
       }else{
         println("bad stuff")
       }
-      println(s"\nGrammar $iteration $likelihood\t"+Math.exp(likelihood)+"\n")
-      println(s"difference $difference")
+      println(s"\nGrammar $iteration $likelihood\n")
+      println(s"\t\t\t\tdifference $difference")
       iteration += 1
     }
-    println(s"\nBest grammar "+grammars.size+" "+likelihoods.head+"\t"+Math.exp(likelihoods.head)+"\n")
-    val stream = new PrintWriter("./grammar.txt")
-    stream.println(grammars.head)
-    if(stream != System.out)
-      stream.close()
+    println(s"\nBest grammar "+grammars.size+" "+likelihoods.head+"\n")
+    SplitMerge.smoothSplits(grammars.head).save("./grammar.txt")
 
-    val streamMerge = new PrintWriter("./mergeLikelihood.txt")
-    for(el <- mergeLikelihoods.last){
-      streamMerge.println(el)
-    }
-    if(streamMerge != System.out)
-      streamMerge.close()
+    // val streamMerge = new PrintWriter("./mergeLikelihood.txt")
+    // for(el <- mergeLikelihoods.last){
+    //   streamMerge.println(el)
+    // }
+    // if(streamMerge != System.out)
+    //   streamMerge.close()
+  }
+
+  "loading and resaving the grammar" should "not break" in {
+    val g = Grammar.loadFromFile("./grammar3.txt")
+    g.save("./grammar2.txt")
   }
 
 }

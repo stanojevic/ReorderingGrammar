@@ -13,10 +13,11 @@ object AlignmentForestParser {
   for(motherSize <- List(2, 4, 5)){
     for(mothersChild <- 1 to motherSize){
       for(perm <- List("A", "N", "P01", "P10", "P12", "P21", "P2413", "P3142", "P24153", "P35142")){
+        defaultNonTerms(perm)
         if(motherSize>2)
-          defaultNonTerms("M"+motherSize+"C"+mothersChild+perm)
+          defaultNonTerms("M" + motherSize + "C" + mothersChild + perm)
         else
-          defaultNonTerms("M"+motherSize+"C"+0+perm)
+          defaultNonTerms("M" + motherSize + "C" +        0     + perm)
       }
     }
   }
@@ -28,7 +29,7 @@ object AlignmentForestParser {
     
     val n = sent.size
     
-    val chart = ChartHelper.emptyChart(n, g.nonTerms)
+    val chart = ChartHelper.emptyChart(n)
     
     for(attachSide <- Set(true, false)){
       for(attachHeight <- Set(true, false)){

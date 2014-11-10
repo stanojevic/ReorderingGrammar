@@ -1,26 +1,24 @@
 package grammar.reordering
 
-import grammar.reordering.representation.ProbabilityHelper.{LogNil, LogOne}
+//import grammar.reordering.representation.ProbabilityHelper.{LogNil, LogOne}
+import grammar.reordering.representation.Probability.LogNil
 
 package object representation {
   
   type NonTerm = Int
   type Word    = Int
-  type Prob = Double
-  type LogProb = Double
   
-  sealed abstract class Rule(val lhs:NonTerm, val prob:Prob) {
-    val logProb:LogProb = Math.log(prob)
+  sealed abstract class Rule(val lhs:NonTerm, val prob:Probability) {
     def toString(voc:IntMapping, nonTerms:IntMapping) : String
   }
-  case class PretermRule(leftHandSide : NonTerm,  word:Word, p:Prob = 0.1) extends Rule(leftHandSide, p) {
+  case class PretermRule(leftHandSide : NonTerm,  word:Word, p:Probability = Probability(0.1)) extends Rule(leftHandSide, p) {
     def toString(voc:IntMapping, nonTerms:IntMapping) : String = {
       val lhsStr = nonTerms(lhs)
       val rhsStr = voc(word)
       s"$lhsStr -> '$rhsStr' | $prob"
     }
   }
-  case class InnerRule(leftHandSide : NonTerm,  rhs:List[NonTerm], p:Prob = 0.1) extends Rule(leftHandSide, p) {
+  case class InnerRule(leftHandSide : NonTerm,  rhs:List[NonTerm], p:Probability = Probability(0.1)) extends Rule(leftHandSide, p) {
     def toString(voc:IntMapping, nonTerms:IntMapping) : String = {
       val lhsStr = nonTerms(lhs)
       val rhsStr = rhs.map{nonTerms(_)}.mkString(" ")
@@ -28,7 +26,7 @@ package object representation {
     }
   }
   
-  class NonTermSpan(var inside:LogProb = LogNil, var outside:LogProb = LogNil){
+  class NonTermSpan(var inside:Probability = LogNil, var outside:Probability = LogNil){
     
     private var edgesContainer:Set[Edge] = Set()
     
@@ -36,6 +34,16 @@ package object representation {
     
     def addEdges(someEdges:Set[Edge]) : Unit = {
       edgesContainer ++= someEdges
+    }
+    
+    def toString(g:Grammar) : String = {
+      if(edgesContainer.isEmpty){
+        "empty NonTermSpan"
+      }else{
+        val lhsStr = g.nonTerms(edges().head.rule.lhs)
+        val rulesStr = edges().map{_.toString(g.voc, g.nonTerms)}.mkString("\n")
+        lhsStr+" in\n"+rulesStr
+      }
     }
   }
     
@@ -47,7 +55,7 @@ package object representation {
     }
   }
 
-  case class Edge(start:Int, end:Int, rule:Rule, splits:List[Int], var inside:LogProb = LogNil) {
+  case class Edge(start:Int, end:Int, rule:Rule, splits:List[Int], var inside:Probability = LogNil) {
     def toString(voc:IntMapping, nonTerms:IntMapping) : String = {
       s"[$start $end] splits=$splits " + rule.toString(voc, nonTerms)
     }
@@ -61,16 +69,7 @@ package object representation {
      * @param n for sent with 10 words n = 10
      * @return chart with root node on coordinates (0,n-1)
      */
-    def emptyChart(n:Int, nonTerms:IntMapping) : Chart = {
-      val chart:Chart = Array.ofDim(n, n)
-
-      for(i <- 0 until n){
-        for(j <- 0 until n){
-          chart(i)(j) = Map[NonTerm, NonTermSpan]()
-        }
-      }
-      chart
-    }
+    def emptyChart(n:Int) : Chart = Array.fill(n, n)(Map[NonTerm, NonTermSpan]())
     
   }
 

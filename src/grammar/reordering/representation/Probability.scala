@@ -1,6 +1,6 @@
 package grammar.reordering.representation
 
-class Probability (private val log:Double) {
+class Probability (val log:Double) {
   
   if(!(Probability.isZero(log) || log <= 0.0)){
     throw new Exception(s"LogProbability cannot be $log")
@@ -8,8 +8,28 @@ class Probability (private val log:Double) {
   
   def toDouble():Double = Probability.eexp(log)
   
-  def +(yProb:Probability) : Probability = {
+  def -(yProb:Probability) : Probability = {
+    val x = this.log
+    val y = yProb.log
     
+    val z = if(Probability.isZero(x)){
+      if(Probability.isZero(y)){
+        Probability.LogZero
+      }else{
+        throw new Exception(s"substracting log-probs should not give positive result $x-$y")
+      }
+    }else if(Probability.isZero(y)){
+      x
+    }else if(x < y){
+      x+Probability.eln(Math.exp(y - x)-1)
+    }else{
+      y+Probability.eln(Math.exp(x - y)-1)
+    }
+    
+    new Probability(z)
+  }
+  
+  def +(yProb:Probability) : Probability = {
     val x = this.log
     val y = yProb.log
     
@@ -27,6 +47,18 @@ class Probability (private val log:Double) {
       new Probability(0.0)
     }else{
       new Probability(z)
+    }
+  }
+
+  def /(yProb:Probability) : Probability = {
+    if(Probability.isZero(this.log)){
+      new Probability(Probability.LogZero)
+    }else if(Probability.isZero(yProb.log)){
+      throw new Exception("Division with 0 "+this.log+" "+yProb.log)
+    }else if(this.log - yProb.log > 0.0 && this.log - yProb.log < Probability.tolerance){
+      Probability.LogOne
+    }else{
+      new Probability(this.log - yProb.log)
     }
   }
   
@@ -65,7 +97,8 @@ object Probability {
   
   def sum(xs:List[Probability]) : Probability = {
     if(xs.size == 0){
-      throw new Exception("cannot compute product of empty array")
+      LogNil
+      //throw new Exception("cannot compute sum of empty array")
     }else{
       xs.reduce(_+_)
     }
@@ -74,6 +107,8 @@ object Probability {
   val tolerance = 1E-8
   
   private val LogZero = Math.log(0.0)
+  val LogNil  = new Probability(LogZero)
+  val LogOne  = Probability(1.0)
   
   private def isZero(x:Double) : Boolean = {
     if(LogZero.isNaN){

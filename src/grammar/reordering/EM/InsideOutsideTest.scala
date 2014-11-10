@@ -8,7 +8,7 @@ import grammar.reordering.representation.NonTerm
 import grammar.reordering.representation.Grammar
 import grammar.reordering.representation.`package`.InnerRule
 import grammar.reordering.representation.`package`.PretermRule
-import grammar.reordering.representation.Grammar
+import grammar.reordering.representation.Probability
 
 class InsideOutsideTest extends FlatSpec with ShouldMatchers{
 
@@ -38,8 +38,8 @@ class InsideOutsideTest extends FlatSpec with ShouldMatchers{
 
     val g0 = InsideOutside.initialIteration(List(sent), List(alignment))
     val rules:Set[Rule] = g0.allRules.map{
-      case InnerRule(lhs, rhs, prob) => InnerRule(lhs, rhs, 0.01)
-      case PretermRule(lhs, word, prob) => PretermRule(lhs, word, 0.01)
+      case InnerRule(lhs, rhs, prob) => InnerRule(lhs, rhs, Probability(0.01))
+      case PretermRule(lhs, word, prob) => PretermRule(lhs, word, Probability(0.01))
     }
     val g1 = g0.copyConstructor(rules)
     

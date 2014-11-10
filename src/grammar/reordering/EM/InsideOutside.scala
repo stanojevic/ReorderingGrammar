@@ -1,8 +1,7 @@
 package grammar.reordering.EM
 
 import grammar.reordering.representation._
-import grammar.reordering.representation.ProbabilityHelper.{LogNil, LogOne}
-import grammar.reordering.representation.ProbabilityHelper._
+import grammar.reordering.representation.Probability.{LogNil, LogOne, sum, product}
 
 object InsideOutside {
   
@@ -21,14 +20,14 @@ object InsideOutside {
     rules
   }
   
-  def inside(chart:Chart, nonTerms:IntMapping) : Unit = {
+  def inside(chart:Chart, g:Grammar) : Unit = {
     val n = chart.size
     
     for(i <- 0 until n){
       chart(i)(i).values.foreach{ nonTermSpan =>
-        nonTermSpan.inside = logSumExp(nonTermSpan.edges.map{_.rule.logProb})
+        nonTermSpan.inside = sum(nonTermSpan.edges.map{_.rule.prob})
         nonTermSpan.edges.foreach{ edge =>
-          edge.inside = edge.rule.logProb
+          edge.inside = edge.rule.prob
         }
       }
     }
@@ -37,23 +36,23 @@ object InsideOutside {
       for(i <- 0 until n-span+1){
         val j = i + span - 1
         
-        val nonTermSpansWithROOT = chart(i)(j).filter(_._1 == nonTerms("ROOT")).values.toList
-        val nonTermSpansWithoutROOT = chart(i)(j).filterNot(_._1 == nonTerms("ROOT")).values.toList
+        val nonTermSpansWithROOT = chart(i)(j).filter(_._1 == g.ROOT).values.toList
+        val nonTermSpansWithoutROOT = chart(i)(j).filterNot(_._1 == g.ROOT).values.toList
         for(nonTermSpan <- nonTermSpansWithoutROOT ++ nonTermSpansWithROOT){
           val lhs = nonTermSpan.edges.head.rule.lhs
           for(edge <- nonTermSpan.edges){
-            edge.inside = edge.rule.logProb + 
-                           children(edge).map{ case (start:Int, end:Int, childNonTerm:NonTerm) =>
+            edge.inside = edge.rule.prob * 
+                           product(children(edge).map{ case (start:Int, end:Int, childNonTerm:NonTerm) =>
                              chart(start)(end)(childNonTerm).inside
-                           }.sum
+                           })
           }
-          chart(i)(j)(lhs).inside = logSumExp(chart(i)(j)(lhs).edges.map{_.inside})
+          chart(i)(j)(lhs).inside = sum(chart(i)(j)(lhs).edges.map{_.inside})
         }
       }
     }
   }
   
-  def outside(chart:Chart, nonTerms:IntMapping) : Unit = {
+  def outside(chart:Chart, g:Grammar) : Unit = {
     val n = chart.size
     
     for(i <- 0 until n){
@@ -61,19 +60,19 @@ object InsideOutside {
         chart(i)(j).values.foreach(_.outside = LogNil)
       }
     }
-    chart(0)(n-1)(nonTerms("ROOT")).outside = LogOne
+    chart(0)(n-1)(g.ROOT).outside = LogOne
     
     for(span <- n to 2 by -1){
       for(i <- 0 until n-span+1){
         val j = i + span - 1
         
-        val nonTermSpansWithROOT = chart(i)(j).filter(_._1 == nonTerms("ROOT")).values.toList
-        val nonTermSpansWithoutROOT = chart(i)(j).filterNot(_._1 == nonTerms("ROOT")).values.toList
+        val nonTermSpansWithROOT = chart(i)(j).filter(_._1 == g.ROOT).values.toList
+        val nonTermSpansWithoutROOT = chart(i)(j).filterNot(_._1 == g.ROOT).values.toList
         for(nonTermSpan <- nonTermSpansWithROOT ++ nonTermSpansWithoutROOT){
           for(edge <- nonTermSpan.edges){
             children(edge).map{ case (start:Int, end:Int, childNonTerm:NonTerm) =>
-              val outsideAddition =  nonTermSpan.outside + edge.inside - chart(start)(end)(childNonTerm).inside
-              chart(start)(end)(childNonTerm).outside = logSumExp(chart(start)(end)(childNonTerm).outside, outsideAddition)
+              val outsideAddition =  nonTermSpan.outside * edge.inside / chart(start)(end)(childNonTerm).inside
+              chart(start)(end)(childNonTerm).outside += outsideAddition
             }
           }
         }
@@ -89,7 +88,7 @@ object InsideOutside {
                     ) : (Grammar, Double) = {
     val (expectedCounts, mergeLikelihood, allSplitLikelihood) = expectation(sents, alignments, g, batchSize, parallel)
     val newGrammar = maximization(g, expectedCounts)
-    (newGrammar, allSplitLikelihood)
+    (newGrammar, allSplitLikelihood.log)
   }
   
   def expectation( sents:List[String],
@@ -97,7 +96,7 @@ object InsideOutside {
                  g:Grammar,
                  batchSize:Int,
                  parallel:Boolean
-                    ) : (Map[Rule, Double], Map[(NonTerm, NonTerm, NonTerm), Double], Double) = {
+                    ) : (Map[Rule, Double], Map[(NonTerm, NonTerm, NonTerm), Probability], Probability) = {
     g.voc.lock()
     val trainingBatches = if(parallel)
                            (sents zip alignments).grouped(batchSize).toList.par
@@ -108,8 +107,8 @@ object InsideOutside {
 
     val (
         expectedCounts:Map[Rule, Double],
-        mergeLikelihood:Map[(NonTerm, NonTerm, NonTerm), LogProb],
-        allSplitLikelihood:LogProb) = trainingBatches.map{ miniBatch:List[(String, String)] =>
+        mergeLikelihood:Map[(NonTerm, NonTerm, NonTerm), Probability],
+        allSplitLikelihood:Probability) = trainingBatches.map{ miniBatch:List[(String, String)] =>
       miniBatch.map{ case (sent, alignment) =>
 
         val a = AlignmentCanonicalParser.extractAlignment(alignment)
@@ -117,19 +116,19 @@ object InsideOutside {
         s.foreach(g.voc(_)) // just checking whether every word is in vocabulary
   
         val chart = AlignmentForestParser.parse(s, a, g)
-        this.inside(chart, g.nonTerms)
-        this.outside(chart, g.nonTerms)
-        val chartExpectations = this.computeExpectedCountPerChart(chart, g.nonTerms)
+        this.inside(chart, g)
+        this.outside(chart, g)
+        val chartExpectations = this.computeExpectedCountPerChart(chart, g)
         val mergeLikelihood = this.computeMergeLikelihood(chart, g)
         val n = chart.size
-        val sentProb = chart(0)(n-1)(g.nonTerms("ROOT")).inside
+        val sentProb = chart(0)(n-1)(g.ROOT).inside
 
         (chartExpectations, mergeLikelihood, sentProb)
 
       }.reduce( sumExpectations )
     }.reduce( sumExpectations )
     
-    (expectedCounts, mergeLikelihood, allSplitLikelihood)
+    (expectedCounts.withDefaultValue(0.0), mergeLikelihood, allSplitLikelihood)
   }
   
   def maximization(g:Grammar, expectedCounts:Map[Rule, Double]) : Grammar = {
@@ -144,8 +143,8 @@ object InsideOutside {
         expectedCounts(rule)
       }.sum
       rules.map{
-        case rule:InnerRule   => rule.copy(p = expectedCounts(rule)/lhsExpectedCount)
-        case rule:PretermRule => rule.copy(p = expectedCounts(rule)/lhsExpectedCount)
+        case rule:InnerRule   => rule.copy(p = Probability(expectedCounts(rule)/lhsExpectedCount))
+        case rule:PretermRule => rule.copy(p = Probability(expectedCounts(rule)/lhsExpectedCount))
       }
     }.toSet
     
@@ -155,14 +154,14 @@ object InsideOutside {
   }
   
   private def sumExpectations(
-      a:(Map[Rule, Double], Map[(NonTerm, NonTerm, NonTerm), LogProb], LogProb),
-      b:(Map[Rule, Double], Map[(NonTerm, NonTerm, NonTerm), LogProb], LogProb))
-      : (Map[Rule, Double], Map[(NonTerm, NonTerm, NonTerm), LogProb], LogProb) = { 
+      a:(Map[Rule, Double], Map[(NonTerm, NonTerm, NonTerm), Probability], Probability),
+      b:(Map[Rule, Double], Map[(NonTerm, NonTerm, NonTerm), Probability], Probability))
+      : (Map[Rule, Double], Map[(NonTerm, NonTerm, NonTerm), Probability], Probability) = { 
     val (aExp, aMerge, aLikelihood) = a
     val (bExp, bMerge, bLikelihood) = b
     val cExp = (aExp.keySet ++ bExp.keySet).map{key => key -> (aExp.getOrElse(key, 0.0) + bExp.getOrElse(key, 0.0))}.toMap
-    val cMerge = (aMerge.keySet ++ bMerge.keySet).map{key => key -> (aMerge.getOrElse(key, 0.0) + bMerge.getOrElse(key, 0.0))}.toMap
-    val cLikelihood = aLikelihood + bLikelihood
+    val cMerge = (aMerge.keySet ++ bMerge.keySet).map{key => key -> (aMerge.getOrElse(key, LogNil) * bMerge.getOrElse(key, LogNil))}.toMap
+    val cLikelihood = aLikelihood * bLikelihood
     (cExp, cMerge, cLikelihood)
   }
   
@@ -194,8 +193,8 @@ object InsideOutside {
     val newRules:Set[Rule] = allRules.groupBy(_.lhs).flatMap{case (lhs:NonTerm, rules:Set[Rule]) =>
       val lhsExpectedCount = rules.size
       rules.map{
-        case rule:InnerRule   => rule.copy(p = expectedCounts(rule)/lhsExpectedCount)
-        case rule:PretermRule => rule.copy(p = expectedCounts(rule)/lhsExpectedCount)
+        case rule:InnerRule   => rule.copy(p = Probability(expectedCounts(rule)/lhsExpectedCount))
+        case rule:PretermRule => rule.copy(p = Probability(expectedCounts(rule)/lhsExpectedCount))
       }
     }.toSet
 
@@ -212,18 +211,18 @@ object InsideOutside {
     newGrammar
   }
   
-  private def computeMergeLikelihood(chart:Chart, g:Grammar) : Map[(NonTerm, NonTerm, NonTerm), LogProb] = {
+  private def computeMergeLikelihood(chart:Chart, g:Grammar) : Map[(NonTerm, NonTerm, NonTerm), Probability] = {
     val n = chart.size
 
-    val mergeLikelihoodAcc = scala.collection.mutable.Map[(NonTerm, NonTerm, NonTerm), LogProb]().withDefaultValue(LogNil)
+    val mergeLikelihoodAcc = scala.collection.mutable.Map[(NonTerm, NonTerm, NonTerm), Probability]().withDefaultValue(LogNil)
 
     for(span <- 1 to n){
       for(i <- 0 until n-span+1){
         val j = i + span - 1
         
-        val splitLikelihoodLogComplete = logSumExp(chart(i)(j).values.toList.map{ nonTermSpan:NonTermSpan =>
-          nonTermSpan.inside + nonTermSpan.outside
-        })
+        val splitLikelihoodComplete = chart(i)(j).values.toList.map{ nonTermSpan:NonTermSpan =>
+          (nonTermSpan.inside * nonTermSpan.outside).toDouble
+        }.sum
         
         g.latestSplitsInts.foreach{ case (mother:NonTerm, split1:NonTerm, split2:NonTerm, p1Raw:Double, p2Raw:Double) =>
           if(chart(i)(j).contains(split1) != chart(i)(j).contains(split2)){
@@ -231,25 +230,31 @@ object InsideOutside {
           }
           if(chart(i)(j) contains split1){
 
-            val p1Log = log( p1Raw/(p1Raw + p2Raw) )
-            val p2Log = log( p2Raw/(p1Raw + p2Raw) )
+            val p1 = Probability( p1Raw/(p1Raw + p2Raw) )
+            val p2 = Probability( p2Raw/(p1Raw + p2Raw) )
 
-            val A1InLog  = chart(i)(j)(split1).inside 
-            val A1OutLog = chart(i)(j)(split1).inside 
+            val A1In  = chart(i)(j)(split1).inside 
+            val A1Out = chart(i)(j)(split1).outside
             
-            val A2InLog = chart(i)(j)(split2).inside 
-            val A2OutLog = chart(i)(j)(split2).inside 
+            val A2In = chart(i)(j)(split2).inside 
+            val A2Out = chart(i)(j)(split2).outside
             
-            val AInLog  = logSumExp((p1Log+A1InLog), (p2Log+A2InLog))
-            val AOutLog = A1OutLog + A2OutLog
+            val AIn  = p1*A1In + p2*A2In
+            val AOut = A1Out + A2Out
             
-            val mergeLikelihoodLogPartial = AInLog+AOutLog
-            val splitLikelihoodLogPartial = logSumExp((A1InLog+A1OutLog), (A2InLog+A2OutLog))
+            val mergeLikelihoodPartial:Probability = AIn * AOut
+            val splitLikelihoodPartial:Probability = A1In*A1Out + A2In*A2Out
             
-            // val mergeLikelihoodLogComplete = Math.log(eexp(splitLikelihoodLogComplete)-eexp(splitLikelihoodLogPartial)+eexp(mergeLikelihoodLogPartial))
-            val mergeLikelihoodLogComplete = logSumExp(logSubstractExpWithLog1p(splitLikelihoodLogComplete, splitLikelihoodLogPartial), mergeLikelihoodLogPartial)
-            
-            mergeLikelihoodAcc( (mother, split1, split2) ) += mergeLikelihoodLogComplete - splitLikelihoodLogComplete
+            val mergeLikelihoodComplete = splitLikelihoodComplete - (splitLikelihoodPartial.toDouble - mergeLikelihoodPartial.toDouble)
+
+            val difference = if(mergeLikelihoodComplete > splitLikelihoodComplete){
+              LogOne // something is wrong
+            }else{
+              // Probability(mergeLikelihoodComplete / splitLikelihoodComplete)
+              LogOne // THIS IS WRONG FOR SURE
+            }
+
+            mergeLikelihoodAcc( (mother, split1, split2) ) *= difference
           }
         }
         
@@ -259,11 +264,11 @@ object InsideOutside {
     mergeLikelihoodAcc.toMap
   }
   
-  private def computeExpectedCountPerChart(chart:Chart, nonTerms:IntMapping) : Map[Rule, Double] = {
+  private def computeExpectedCountPerChart(chart:Chart, g:Grammar) : Map[Rule, Double] = {
     val n = chart.size
-    val sentProb = eexp(chart(0)(n-1)(nonTerms("ROOT")).inside)
+    val sentProb = chart(0)(n-1)(g.ROOT).inside
     
-    val ruleCountAcc = scala.collection.mutable.Map[Rule, Double]().withDefaultValue(0.0)
+    val ruleCountAcc = scala.collection.mutable.Map[Rule, Probability]().withDefaultValue(LogNil)
     
     for(span <- 1 to n){
       for(i <- 0 until n-span+1){
@@ -271,16 +276,17 @@ object InsideOutside {
         
         for(nonTermSpan <- chart(i)(j).values){
           nonTermSpan.edges.groupBy(_.rule).foreach{ case (rule:Rule, edges:List[Edge]) =>
-            ruleCountAcc(rule) += eexp(nonTermSpan.outside + logSumExp(edges.map{_.inside}))
+            ruleCountAcc(rule) += nonTermSpan.outside * sum(edges.map{_.inside})
           }
         }
       }
     }
 
-    ruleCountAcc.toMap.mapValues{_/sentProb}
+    // we know that count per chart is between 0 and 1 so it's okay to use Probability data type
+    ruleCountAcc.toMap.mapValues{count:Probability => (count/sentProb).toDouble}
   }
   
-  private def children(edge:Edge) : List[(Int, Int, NonTerm)] = {
+  def children(edge:Edge) : List[(Int, Int, NonTerm)] = {
     (childrenSpans(edge) zip edge.rule.asInstanceOf[InnerRule].rhs).map{ case ((x, y), z) => (x,y,z)}
   }
   

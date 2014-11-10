@@ -6,12 +6,18 @@ import grammar.reordering.representation.NonTerm
 import grammar.reordering.representation.`package`.Rule
 import grammar.reordering.representation.InnerRule
 import grammar.reordering.representation.PretermRule
+import grammar.reordering.representation.Probability
+import grammar.reordering.representation.Probability.sum
 import scala.util.Random
 
 object SplitMerge {
 
   private var latentLimit = Map[String, Int]()
   latentLimit += "ROOT" -> 1
+
+   for(perm <- List("A", "N", "P01", "P10", "P12", "P21", "P2413", "P3142", "P24153", "P35142")){
+     latentLimit += perm -> 1
+   }
 
   for(motherSize <- List(2, 4, 5)){
     for(mothersChild <- 1 to motherSize){
@@ -94,8 +100,11 @@ object SplitMerge {
         val combinationsSize = combinations.size //to speed it up a bit
         
         combinations.map{ case lhs::rhs =>
-          val randomness = if(combinationsSize == 1) 0.0 else Random.nextDouble()/100
-          InnerRule(lhs, rhs, oldProb + randomness)
+          var randomness = if(combinationsSize == 1) 0.0 else Random.nextDouble()/100 - 0.005
+          while(oldProb.toDouble + randomness > 1.0 || oldProb.toDouble + randomness < 0.0){
+            randomness = Random.nextDouble()/100 - 0.005
+          }
+          InnerRule(lhs, rhs, Probability(oldProb.toDouble + randomness))
         }
       case PretermRule(oldLhs, word, prob) =>
         val nonTermString = oldNonTerms(oldLhs)
@@ -106,12 +115,36 @@ object SplitMerge {
             List(newNonTerms(nonTermString))
           }
         representation.map{ case lhs =>
-          val randomness = if(representation.size == 1) 0.0 else Random.nextDouble()/100
-          PretermRule(lhs, word, prob+randomness)
+          var randomness = if(representation.size == 1) 0.0 else Random.nextDouble()/100 - 0.005
+          while(prob.toDouble + randomness > 1.0 || prob.toDouble + randomness < 0.0){
+            randomness = Random.nextDouble()/100 - 0.005
+          }
+          PretermRule(lhs, word, Probability(prob.toDouble+randomness))
         }
     }
 
     new Grammar(normalize(newRules), newLatentMappings, oldVoc, newNonTerms, newSplits)
+  }
+  
+  def smoothSplits(oldG:Grammar) : Grammar = {
+    val alpha = 0.01
+    val newRules:Set[Rule] = oldG.allRules.groupBy{
+      case rule:InnerRule   => (oldG.reverseLatentMappings(rule.lhs), rule.rhs)
+      case rule:PretermRule => (oldG.reverseLatentMappings(rule.lhs), rule.word)
+    }.toList.flatMap{
+      case ((parentLhs:NonTerm, rhs:List[Any]), rules) =>
+        val pBar = rules.asInstanceOf[Set[Rule]].map{_.prob.toDouble}.sum / rules.size
+        rules.asInstanceOf[Set[InnerRule]].map{ case InnerRule(lhs, rhs, prob) =>
+          InnerRule(lhs, rhs, Probability((1-alpha)*prob.toDouble + alpha*pBar))
+        }.toList
+      case ((parentLhs:NonTerm, word:NonTerm), rules) =>
+        val pBar = rules.asInstanceOf[Set[Rule]].map{_.prob.toDouble}.sum / rules.size
+        rules.asInstanceOf[Set[PretermRule]].map{ case PretermRule(lhs, word, prob) =>
+          PretermRule(lhs, word, Probability((1-alpha)*prob.toDouble + alpha*pBar))
+        }.toList
+    }.toSet
+
+    new Grammar(normalize(newRules), oldG.latentMappings, oldG.voc, oldG.nonTerms, oldG.latestSplits)
   }
   
   def merge(oldG:Grammar) : Grammar = {
@@ -124,10 +157,10 @@ object SplitMerge {
   
   private def normalize(rules:Set[Rule]) : Set[Rule] =
     rules.groupBy(_.lhs).flatMap{ case (lhs, rules) =>
-      val total = rules.toList.map{_.prob}.sum
+      val total = rules.toList.map{_.prob.toDouble}.sum
       rules.map{
-        case InnerRule(_, rhs, prob) => InnerRule(lhs, rhs, prob/total)
-        case PretermRule(_, word, prob) => PretermRule(lhs, word, prob/total)
+        case InnerRule(_, rhs, prob) => InnerRule(lhs, rhs, Probability(prob.toDouble/total))
+        case PretermRule(_, word, prob) => PretermRule(lhs, word, Probability(prob.toDouble/total))
       }
     }.toSet
 
