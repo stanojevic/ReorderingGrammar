@@ -42,7 +42,7 @@ object CYK {
       for(rule @ PretermRule(lhs, word, p) <- pretermRules){
         if(!(chart(i)(i) contains lhs))
           chart(i)(i) += lhs -> new NonTermSpan()
-        chart(i)(i)(lhs).addEdges(Set(Edge(i, i, rule, List())))
+        chart(i)(i)(lhs).addEdge(Edge(i, i, rule, List()))
       }
       
       ////// step 2 //////
@@ -69,7 +69,7 @@ object CYK {
                 if(!(chart(i)(j) contains lhs)){
                   chart(i)(j) += lhs -> new NonTermSpan()
                 }
-                chart(i)(j)(lhs).addEdges(Set(Edge(i, j, rule, splits.reverse)))
+                chart(i)(j)(lhs).addEdge(Edge(i, j, rule, splits.reverse))
               }else{
                 /// rule is incomplete
                 /// add it to the dot chart
@@ -87,7 +87,7 @@ object CYK {
               if(!(chart(i)(j) contains lhs)){
                 chart(i)(j) += lhs -> new NonTermSpan()
               }
-              chart(i)(j)(lhs).addEdges(Set(Edge(i, j, rule, List())))
+              chart(i)(j)(lhs).addEdge(Edge(i, j, rule, List()))
             }else{
               // non-unary rule
               dotChart(i)(j) ::= DotEdge(rhs.tail, rule, List(j+1))
@@ -119,7 +119,8 @@ object CYK {
         }.toList)
         Edge(i, i, PretermRule(newLhs, edges.head.rule.asInstanceOf[PretermRule].word, r/sentProb), List())
       }.foreach{ newEdge =>
-        chart(i)(i) += newEdge.rule.lhs -> NonTermSpan(Set(newEdge))
+        chart(i)(i) += newEdge.rule.lhs -> new NonTermSpan()
+        chart(i)(i)(newEdge.rule.lhs).addEdge(newEdge)
       }
       
     }
@@ -146,7 +147,7 @@ object CYK {
           val r = sum(edges.map{case Edge(_, _, rule, _, inside) => latentChart(i)(j)(rule.lhs).outside * inside}.toList)
           val newRule = InnerRule(lhs, rhs, r/sentProb)
           val newEdge = Edge(i, j, newRule, splits)
-          chart(i)(j)(lhs).addEdges(Set(newEdge))
+          chart(i)(j)(lhs).addEdge(newEdge)
         }
       }
     }

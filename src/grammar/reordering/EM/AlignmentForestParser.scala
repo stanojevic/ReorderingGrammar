@@ -12,7 +12,7 @@ object AlignmentForestParser {
   defaultNonTerms("ROOT")
   for(motherSize <- List(2, 4, 5)){
     for(mothersChild <- 1 to motherSize){
-      for(perm <- List("A", "N", "P01", "P10", "P12", "P21", "P2413", "P3142", "P24153", "P35142")){
+      for(perm <- List("A", "N", "P01", "P10", "P12", "P21", "P2413", "P3142", "P24153", "P25314", "P42513", "P41352", "P35142", "P31524")){
         defaultNonTerms(perm)
         if(motherSize>2)
           defaultNonTerms("M" + motherSize + "C" + mothersChild + perm)
@@ -46,7 +46,7 @@ object AlignmentForestParser {
   private def addStartSymbols(chart:Chart, g:Grammar) : Unit = {
     val start = 0
     val end = chart.size - 1
-    val lhs = g.nonTerms("ROOT")
+    val lhs = g.ROOT
 //    val edges:Set[Edge] = chart(start)(end).
 //      filter{ case (k:grammar.reordering.representation.NonTerm, v:NonTermSpan) => v.edges.size>0}.
 //      flatMap{ case (key, value) => g.getAllLatentInnerRules(lhs, List(key)).map{Edge(start, end, _, List())}}.toSet
@@ -54,7 +54,10 @@ object AlignmentForestParser {
       g.latentMappings(lhs).map{latentLhs => Edge(start, end, g.getInnerRule(latentLhs, List(rhs)), List())}
     }
     for(latentLhs <- g.latentMappings(lhs)){
-      chart(start)(end) += latentLhs -> NonTermSpan(edges.filter(_.rule.lhs == latentLhs))
+      chart(start)(end) += latentLhs -> new NonTermSpan()
+      for(edge <- edges.filter(_.rule.lhs == latentLhs)){
+        chart(start)(end)(latentLhs).addEdge(edge)
+      }
     }
   }
   
@@ -105,24 +108,9 @@ object AlignmentForestParser {
         val rules = g.getAllLatentPretermRules(lhs, g.voc(words(pos)))
         val edges = rules.map{rule => Edge(pos, pos, rule, List())}
 
-        edges.groupBy(_.rule.lhs).foreach{ case (latentLhs, latentEdges:Set[Edge]) =>
-          if(chart(pos)(pos) contains latentLhs){
-            chart(pos)(pos)(latentLhs).addEdges(latentEdges)
-          }else{
-            chart(pos)(pos) += latentLhs -> NonTermSpan(latentEdges)
-          }
-        }
-
-//        for(latentLhs <- g.latentMappings(lhs)){
-//          if(chart(pos)(pos) contains latentLhs){
-//            chart(pos)(pos)(latentLhs).addEdges(edges.filter(_.rule.lhs == latentLhs))
-//          }else{
-//            chart(pos)(pos) += latentLhs -> NonTermSpan(edges.filter(_.rule.lhs == latentLhs))
-//          }
-//        }
+        storeEdges(chart, edges)
 
       case NonTerm(start, end, min, max, op, children) => {
-
         // recursion
         children.zipWithIndex.foreach{ case (child, index) => addToChart(chart, child, words, op.size, index+1, g)}
 
@@ -134,28 +122,13 @@ object AlignmentForestParser {
             for(spannedChildren <- children.sliding(span)){
               val spanStart = spannedChildren.head.left
               val spanEnd   = spannedChildren.last.right
-              var edges = Set[Edge]()
               for(splitPoint <- spannedChildren.tail.map{_.left}){
                 val (leftNodes, rightNodes) = spannedChildren.partition{_.left<splitPoint}
                 val rhs = List(partialNodeListToStr(lhsStr, leftNodes), partialNodeListToStr(lhsStr, rightNodes)).map{g.nonTerms(_)}
                 val rules = g.getAllLatentInnerRules(lhs, rhs)
-                edges ++= rules.map{rule => Edge(spanStart,  spanEnd, rule, List(splitPoint))}
+                val edges = rules.map{rule => Edge(spanStart,  spanEnd, rule, List(splitPoint))}
+                storeEdges(chart, edges)
               }
-
-              edges.groupBy(_.rule.lhs).foreach{ case (latentLhs, latentEdges:Set[Edge]) =>
-                if(chart(spanStart)(spanEnd) contains latentLhs){
-                  chart(spanStart)(spanEnd)(latentLhs).addEdges(latentEdges)
-                }else{
-                  chart(spanStart)(spanEnd) += latentLhs -> NonTermSpan(latentEdges)
-                }
-              }
-//              for(latentLhs <- g.latentMappings(lhs)){
-//                if(chart(spanStart)(spanEnd) contains latentLhs){
-//                  chart(spanStart)(spanEnd)(latentLhs).addEdges(edges.filter(_.rule.lhs == latentLhs))
-//                }else{
-//                  chart(spanStart)(spanEnd) += latentLhs -> NonTermSpan(edges.filter(_.rule.lhs == latentLhs))
-//                }
-//              }
             }
           }
         }else{
@@ -163,15 +136,21 @@ object AlignmentForestParser {
           val rhs = children.zipWithIndex.map{ case (child, index) => g.nonTerms(nodeToStr(child, children.size, index+1))}
           val rules = g.getAllLatentInnerRules(lhs, rhs)
           val edges = rules.map{rule => Edge(start, end, rule, splitPoints)}
-          edges.groupBy(_.rule.lhs).foreach{ case (latentLhs, latentEdges:Set[Edge]) =>
-            if(chart(start)(end) contains latentLhs){
-              chart(start)(end)(latentLhs).addEdges(latentEdges)
-            }else{
-              chart(start)(end) += latentLhs -> NonTermSpan(latentEdges)
-            }
-          }
+          storeEdges(chart, edges)
         }
       }
+    }
+  }
+  
+  private def storeEdges(chart:Chart, edges : List[Edge]) : Unit = {
+    for (edge <- edges) {
+      val start = edge.start
+      val end = edge.end
+      val latentLhs = edge.rule.lhs
+      if (!(chart(start)(end) contains latentLhs)) {
+        chart(start)(end) += latentLhs -> new NonTermSpan()
+      }
+      chart(start)(end)(latentLhs).addEdge(edge)
     }
   }
   

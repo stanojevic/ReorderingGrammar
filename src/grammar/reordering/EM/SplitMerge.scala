@@ -15,13 +15,13 @@ object SplitMerge {
   private var latentLimit = Map[String, Int]()
   latentLimit += "ROOT" -> 1
 
-   for(perm <- List("A", "N", "P01", "P10", "P12", "P21", "P2413", "P3142", "P24153", "P35142")){
+   for(perm <- List("A", "N", "P01", "P10", "P12", "P21", "P2413", "P3142", "P24153", "P25314", "P42513", "P41352", "P35142", "P31524")){
      latentLimit += perm -> 1
    }
 
   for(motherSize <- List(2, 4, 5)){
     for(mothersChild <- 1 to motherSize){
-      for(perm <- List("A", "N", "P01", "P10", "P12", "P21", "P2413", "P3142", "P24153", "P35142")){
+      for(perm <- List("A", "N", "P01", "P10", "P12", "P21", "P2413", "P3142", "P24153", "P25314", "P42513", "P41352", "P35142", "P31524")){
         if(motherSize>2){
           // How many nonterms that cause combinatorial explosion?
           val nt = "M"+motherSize+"C"+mothersChild+perm

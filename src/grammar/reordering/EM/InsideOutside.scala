@@ -2,6 +2,7 @@ package grammar.reordering.EM
 
 import grammar.reordering.representation._
 import grammar.reordering.representation.Probability.{LogNil, LogOne, sum, product}
+import java.io.PrintWriter
 
 object InsideOutside {
   
@@ -36,17 +37,22 @@ object InsideOutside {
       for(i <- 0 until n-span+1){
         val j = i + span - 1
         
-        val nonTermSpansWithROOT = chart(i)(j).filter(_._1 == g.ROOT).values.toList
-        val nonTermSpansWithoutROOT = chart(i)(j).filterNot(_._1 == g.ROOT).values.toList
-        for(nonTermSpan <- nonTermSpansWithoutROOT ++ nonTermSpansWithROOT){
-          val lhs = nonTermSpan.edges.head.rule.lhs
-          for(edge <- nonTermSpan.edges){
+        val allEdges:List[Edge] = chart(i)(j).values.flatMap(_.edges).toList
+        
+        val (unaryEdges, naryEdges) = allEdges.partition(_.rule.asInstanceOf[InnerRule].rhs.size == 1)
+
+        for(processingUnary <- List(false, true)){
+          val edgesToProcess = if(processingUnary) unaryEdges else naryEdges
+          for(edge <- edgesToProcess){
             edge.inside = edge.rule.prob * 
-                           product(children(edge).map{ case (start:Int, end:Int, childNonTerm:NonTerm) =>
-                             chart(start)(end)(childNonTerm).inside
-                           })
+                             product(edge.children.map{ case (start:Int, end:Int, childNonTerm:NonTerm) =>
+                               chart(start)(end)(childNonTerm).inside
+                             })
           }
-          chart(i)(j)(lhs).inside = sum(chart(i)(j)(lhs).edges.map{_.inside})
+  
+          for(nonTermSpan <- chart(i)(j).values){
+            nonTermSpan.inside = sum(nonTermSpan.edges.map{_.inside})
+          }
         }
       }
     }
@@ -66,13 +72,15 @@ object InsideOutside {
       for(i <- 0 until n-span+1){
         val j = i + span - 1
         
-        val nonTermSpansWithROOT = chart(i)(j).filter(_._1 == g.ROOT).values.toList
-        val nonTermSpansWithoutROOT = chart(i)(j).filterNot(_._1 == g.ROOT).values.toList
-        for(nonTermSpan <- nonTermSpansWithROOT ++ nonTermSpansWithoutROOT){
-          for(edge <- nonTermSpan.edges){
-            children(edge).map{ case (start:Int, end:Int, childNonTerm:NonTerm) =>
-              val outsideAddition =  nonTermSpan.outside * edge.inside / chart(start)(end)(childNonTerm).inside
-              chart(start)(end)(childNonTerm).outside += outsideAddition
+        val allEdgesWithNTS = chart(i)(j).values.flatMap(nonTermSpan => nonTermSpan.edges.map{(_, nonTermSpan)})
+        
+        val (unaryEdgesWithNTS, naryEdgesWithNTS) = allEdgesWithNTS.partition(_._1.rule.asInstanceOf[InnerRule].rhs.size == 1)
+
+        for(processingUnary <- List(true, false)){
+          val edgesWithNTS = if(processingUnary) unaryEdgesWithNTS else naryEdgesWithNTS
+          for((edge, nonTermSpan) <- edgesWithNTS){
+            for((start, end, childNonTerm) <- edge.children){
+              chart(start)(end)(childNonTerm).outside += nonTermSpan.outside * edge.inside / chart(start)(end)(childNonTerm).inside
             }
           }
         }
@@ -102,8 +110,7 @@ object InsideOutside {
                            (sents zip alignments).grouped(batchSize).toList.par
                          else
                            (sents zip alignments).grouped(batchSize).toList
-
-    val  mergeLikelihood2:Map[(NonTerm, NonTerm, NonTerm), Double] = null
+    var processed = 0
 
     val (
         expectedCounts:Map[Rule, Double],
@@ -113,18 +120,45 @@ object InsideOutside {
 
         val a = AlignmentCanonicalParser.extractAlignment(alignment)
         val s = sent.split(" +").toList
-        s.foreach(g.voc(_)) // just checking whether every word is in vocabulary
   
+        var t1 = System.currentTimeMillis()
         val chart = AlignmentForestParser.parse(s, a, g)
+        var t2 = System.currentTimeMillis()
+        println((t2-t1)+" ms for forest parsing")
+
+        t1 = System.currentTimeMillis()
         this.inside(chart, g)
+        t2 = System.currentTimeMillis()
+        println((t2-t1)+" ms for inside")
+
+        t1 = System.currentTimeMillis()
         this.outside(chart, g)
+        t2 = System.currentTimeMillis()
+        println((t2-t1)+" ms for outside")
+
+        t1 = System.currentTimeMillis()
         val chartExpectations = this.computeExpectedCountPerChart(chart, g)
+        t2 = System.currentTimeMillis()
+        println((t2-t1)+" ms for computeExpectedCountPerChart")
+
+        t1 = System.currentTimeMillis()
         val mergeLikelihood = this.computeMergeLikelihood(chart, g)
+        t2 = System.currentTimeMillis()
+        println((t2-t1)+" ms for computeMergeLikelihood")
+
         val n = chart.size
         val sentProb = chart(0)(n-1)(g.ROOT).inside
 
-        (chartExpectations, mergeLikelihood, sentProb)
+        processed += 1
+        if(processed % 10 == 0){
+          println(processed)
+          t1 = System.currentTimeMillis()
+          System.gc()
+          t2 = System.currentTimeMillis()
+          println((t2-t1)+" ms for gc")
+        }
 
+        (chartExpectations, mergeLikelihood, sentProb)
       }.reduce( sumExpectations )
     }.reduce( sumExpectations )
     
@@ -132,19 +166,17 @@ object InsideOutside {
   }
   
   def maximization(g:Grammar, expectedCounts:Map[Rule, Double]) : Grammar = {
-    // println("START")
-    for((rule, expect) <- expectedCounts.toList.sortBy{_._1.lhs }.toList){
-      // println(rule.toString(g.voc, g.nonTerms)+ " "+expect)
-    }
-    // println("DONE")
-    
     val newRules:Set[Rule] = g.allRules.groupBy(_.lhs).flatMap{case (lhs:NonTerm, rules:Set[Rule]) =>
       val lhsExpectedCount:Double = rules.toList.map{ rule =>
         expectedCounts(rule)
       }.sum
-      rules.map{
-        case rule:InnerRule   => rule.copy(p = Probability(expectedCounts(rule)/lhsExpectedCount))
-        case rule:PretermRule => rule.copy(p = Probability(expectedCounts(rule)/lhsExpectedCount))
+      if(lhsExpectedCount == 0.0){
+        List()
+      }else{
+        rules.map{
+          case rule:InnerRule   => rule.copy(p = Probability(expectedCounts(rule)/lhsExpectedCount))
+          case rule:PretermRule => rule.copy(p = Probability(expectedCounts(rule)/lhsExpectedCount))
+        }
       }
     }.toSet
     
@@ -192,6 +224,7 @@ object InsideOutside {
     val expectedCounts = Map[Rule, Double]().withDefaultValue(1.0)
     val newRules:Set[Rule] = allRules.groupBy(_.lhs).flatMap{case (lhs:NonTerm, rules:Set[Rule]) =>
       val lhsExpectedCount = rules.size
+      //Grammar.testNonRepeatingRules(rules)
       rules.map{
         case rule:InnerRule   => rule.copy(p = Probability(expectedCounts(rule)/lhsExpectedCount))
         case rule:PretermRule => rule.copy(p = Probability(expectedCounts(rule)/lhsExpectedCount))
@@ -275,24 +308,16 @@ object InsideOutside {
         val j = i + span - 1
         
         for(nonTermSpan <- chart(i)(j).values){
-          nonTermSpan.edges.groupBy(_.rule).foreach{ case (rule:Rule, edges:List[Edge]) =>
-            ruleCountAcc(rule) += nonTermSpan.outside * sum(edges.map{_.inside})
+          for(edge <- nonTermSpan.edges){
+            ruleCountAcc(edge.rule) += nonTermSpan.outside * edge.inside
           }
         }
       }
     }
 
-    // we know that count per chart is between 0 and 1 so it's okay to use Probability data type
-    ruleCountAcc.toMap.mapValues{count:Probability => (count/sentProb).toDouble}
+    ruleCountAcc.toMap.mapValues{count:Probability =>
+      count.toDouble/sentProb.toDouble
+    }
   }
   
-  def children(edge:Edge) : List[(Int, Int, NonTerm)] = {
-    (childrenSpans(edge) zip edge.rule.asInstanceOf[InnerRule].rhs).map{ case ((x, y), z) => (x,y,z)}
-  }
-  
-  private def childrenSpans(edge:Edge) : List[(Int, Int)] = {
-    val allSplits = edge.start :: edge.splits.flatMap(split => List(split-1, split)) ++ List(edge.end)
-    allSplits.sliding(2, 2).map{ case List(x, y) => (x, y)}.toList
-  }
-
 }

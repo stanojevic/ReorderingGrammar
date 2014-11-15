@@ -33,16 +33,18 @@ object Preprocessing {
   }
   
   def maxArity(a:Set[(Int, Int)]) : Int = {
-    val n = a.map{_._1}.max
+    val n = a.map{_._1}.max + 1
     val attachLeft = false // doesn't matter
     val attachLow  = false // doesn't matter
-    var tree = AlignmentCanonicalParser.parse(n, a, attachLeft, attachLow)
-    tree.map{
+    def maxArityRec(node:TreeNode) : Int = node match {
       case NonTerm(start:Int, end:Int, min:Int, max:Int, operator:List[Int], children:List[TreeNode]) =>
-        operator.size
+        (children.size :: children.map{maxArityRec(_)}).max
       case Term(position:Int, el:Int) =>
         0
-    }.max
+    }
+    var tree = AlignmentCanonicalParser.parse(n, a, attachLeft, attachLow)
+    val arity = maxArityRec(tree)
+    arity
   }
   
   def numAlignedWords(a:Set[(Int, Int)]) : Int = {

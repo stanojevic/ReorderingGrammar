@@ -21,12 +21,12 @@ class NBestExtractorTest extends FlatSpec with ShouldMatchers{
     
     val delatentizedChart = CYK.deLatentizeChart(g, chart)
     
-    val k = 200
+    val k = 5
     val result = NBestExtractor.extractKbest(g, delatentizedChart, k)
     var i = 1
-    AlignmentCanonicalParser.visualizeTree(result.head._1, "rank="+i+"/"+result.size+" p="+result.head._2.toDouble)
+    // AlignmentCanonicalParser.visualizeTree(result.head._1, "rank="+i+"/"+result.size+" p="+result.head._2.toDouble)
     result.take(k).foreach{ weightedTree =>
-      //AlignmentCanonicalParser.visualizeTree(weightedTree._1, "rank="+i+"/"+result.size+" p="+weightedTree._2.toDouble)
+      AlignmentCanonicalParser.visualizeTree(weightedTree._1, "rank="+i+"/"+result.size+" p="+weightedTree._2.toDouble)
       println("rank="+i+"/"+result.size+" p="+weightedTree._2.toDouble)
       i+=1
     }

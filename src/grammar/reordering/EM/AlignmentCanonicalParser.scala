@@ -27,7 +27,7 @@ object AlignmentCanonicalParser {
     avgPositions.zipWithIndex.filter{_._1>=0}.map{_._2}.zip(minPermutation).foreach{ case (index, permIndex) =>
       mapping(index) = permIndex
     }
-    val inverseMapping = new Array[Int](n)
+    val inverseMapping = new Array[Int](n+1) // adding one because permutations start from 1 and we ignore 0th element
     for(i <- 0 until mapping.size){
       if(mapping(i) != 0)
         inverseMapping(mapping(i)) = i

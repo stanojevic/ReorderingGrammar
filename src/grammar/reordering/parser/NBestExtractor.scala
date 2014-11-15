@@ -57,7 +57,7 @@ object NBestExtractor {
           for(edge <- nonTermSpan.edges){
             val rule = edge.rule.asInstanceOf[InnerRule]
             val a = rule.rhs.size
-            val spans = InsideOutside.children(edge)
+            val spans = edge.children
             val candidates = spans.map{case (start, end, nt) => bestChart(start)(end)(nt)}.toArray
             val prob = edge.rule.prob
             

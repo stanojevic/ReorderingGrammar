@@ -1,5 +1,9 @@
 package grammar.reordering.representation
 
+import gnu.trove.map.hash.TIntObjectHashMap
+import gnu.trove.map.hash.TObjectIntHashMap
+import scala.collection.JavaConversions
+
 class IntMapping {
   
   private var locked = false
@@ -14,10 +18,14 @@ class IntMapping {
   }
   
   private var maxInt = 0
+  
+  private var voc = new TObjectIntHashMap[String]()
 
-  private var voc = Map[String, Int]()
+  private var inverseVoc = new TIntObjectHashMap[String]()
 
-  private var inverseVoc = Map[Int, String]()
+  // private var voc = Map[String, Int]()
+
+  // private var inverseVoc = Map[Int, String]()
   
   /**
    * not thread safe
@@ -27,17 +35,17 @@ class IntMapping {
       if(locked){
         throw new Exception(s"modifying IntMapping with $word while locked")
       }
-      voc        += ( word   -> maxInt )
-      inverseVoc += ( maxInt -> word   )
+      voc        .put( word   , maxInt )
+      inverseVoc .put( maxInt , word   )
       maxInt += 1
     }
-    voc(word)
+    voc.get(word)
   }
   
-  def apply(index:Int) : String = inverseVoc(index)
+  def apply(index:Int) : String = inverseVoc.get(index)
   
-  def allStrings() : Set[String] = voc.keySet
-  def allInts() : Set[Int] = inverseVoc.keySet
+  def allStrings() : Set[String] = JavaConversions.asScalaSet(voc.keySet).toSet
+  def allInts()    : Set[Int]    = inverseVoc.keys.toSet
   
   def contains(index:Int  ) : Boolean = inverseVoc contains index
   def contains(word:String) : Boolean =        voc contains word

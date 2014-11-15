@@ -11,6 +11,7 @@ import grammar.reordering.representation.`package`.PretermRule
 import grammar.reordering.representation.Probability
 import grammar.reordering.representation.Probability.{LogNil, LogOne}
 import java.io.PrintWriter
+import scala.io.Source
 
 class SplitMergeTest extends FlatSpec with ShouldMatchers{
 
@@ -59,7 +60,7 @@ class SplitMergeTest extends FlatSpec with ShouldMatchers{
     
     // val limit = 0.000000000000000000000000001
     val limit = Double.NegativeInfinity 
-
+    
     while(difference.toDouble>=limit && iteration < 30){
       println(s"Starting training iteration $iteration")
       val (expectedCounts, mergeLikelihood, likelihood) = InsideOutside.expectation(sents, alignments, grammars.head, batchSize, parallel)
@@ -79,7 +80,7 @@ class SplitMergeTest extends FlatSpec with ShouldMatchers{
       iteration += 1
     }
     println(s"\nBest grammar "+grammars.size+" "+likelihoods.head+"\n")
-    SplitMerge.smoothSplits(grammars.head).save("./grammar.txt")
+    SplitMerge.smoothSplits(grammars.head).save("./grammars/grammar.txt")
 
     // val streamMerge = new PrintWriter("./mergeLikelihood.txt")
     // for(el <- mergeLikelihoods.last){
@@ -90,8 +91,72 @@ class SplitMergeTest extends FlatSpec with ShouldMatchers{
   }
 
   "loading and resaving the grammar" should "not break" in {
-    val g = Grammar.loadFromFile("./grammar3.txt")
-    g.save("./grammar2.txt")
+    val g = Grammar.loadFromFile("./grammars/grammar3.txt")
+    g.save("./grammars/grammar2.txt")
+  }
+  
+  "full training" should "be fast" in {
+    val rawRawSents = Source.fromFile("data/top1000_english").getLines.toList
+    val rawSents = rawRawSents.map{_.split(" +").toList}
+    val rawAlignments = Source.fromFile("data/top1000_alignments").getLines.toList
+    val alignments = rawAlignments.map{AlignmentCanonicalParser.extractAlignment(_)}
+    
+    val maxUnknownCount = 3
+    val sents = Preprocessing.prepareTrainingDataForUnknownWords(rawSents, maxUnknownCount)
+    
+    val filtered = (sents zip alignments).filter{ case (sent, a) =>
+      val arity = Preprocessing.maxArity(a)
+      arity <= 5 &&
+      Preprocessing.numAlignedWords(a) >=2
+    }
+    println("Selected: "+filtered.size)
+    
+    val t1 = System.currentTimeMillis()
+    var trainingSents = filtered.map{_._1.mkString(" ")}
+    var trainingAlignments = filtered.map{_._2.map{case (i, j) => s"$i-$j"}.mkString(" ")}
+    val initG = InsideOutside.initialIteration(trainingSents, trainingAlignments)
+    val t2 = System.currentTimeMillis()
+    val periodInit = t2-t1
+    println(s"time for init run: $periodInit ms")
+    
+    val t3 = System.currentTimeMillis()
+    initG.save("grammars/big_grammar")
+    val t4 = System.currentTimeMillis()
+    val periodSaving = t4-t3
+    println(s"time for saving run: $periodSaving ms")
+    
+    var currentG = initG
+    
+    val splitIts = 3
+    for(splitIt <- 1 to splitIts){
+      println(s"SPLIT $splitIt")
+      currentG = SplitMerge.split(currentG, Map().withDefaultValue(1.0))
+      println(s"DONE SPLIT $splitIt")
+    }
+    
+    
+
+    trainingSents = trainingSents.take(10)
+    trainingAlignments = trainingAlignments.take(10)
+    val iterations = 9
+    val batchSize = 5
+    val parallel = false
+    for(iter <- 1 to iterations){
+      println("STARTING STUPID ITERATION")
+      val t5 = System.currentTimeMillis()
+      val res = InsideOutside.iteration(trainingSents, trainingAlignments, currentG, batchSize, parallel)
+      currentG = res._1 
+      val likelihood = res._2
+      val t6 = System.currentTimeMillis()
+      val iterPeriod = t6-t5
+      println(s"iteration $iter took $iterPeriod ms    likelihood $likelihood or "+Math.exp(likelihood))
+      val t7 = System.currentTimeMillis()
+      currentG.save(s"grammars/grammar_iter_$iter")
+      val t8 = System.currentTimeMillis()
+      val savingPeriod = t8-t7
+      println(s"iteration $iter saving took $savingPeriod ms")
+    }
+    
   }
 
 }
