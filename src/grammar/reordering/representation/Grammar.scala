@@ -7,7 +7,6 @@ class Grammar ( rulesArg:Set[Rule],
                 val latentMappings:Map[NonTerm,List[NonTerm]],
                 val voc:IntMapping,
                 val nonTerms:IntMapping,
-                val latestSplits:List[(String, String, String, Double, Double)],
                 dummy:Boolean=false) {
 
   val unknown : Word = voc(Grammar.unknownToken)
@@ -22,15 +21,17 @@ class Grammar ( rulesArg:Set[Rule],
     case (parent:NonTerm, latents:List[NonTerm]) => latents.map{(_, parent)}
   }
   
-  val latestSplitsInts:List[(NonTerm, NonTerm, NonTerm, Double, Double)] = latestSplits.map{ case (mother:String, split1:String, split2:String, p1Raw:Double, p2Raw:Double) =>
-    (nonTerms(mother), nonTerms(split1), nonTerms(split2), p1Raw, p2Raw)
-  }
+  private lazy val permRx = """.*P(\d+).*$""".r
+  lazy val permutationMappings:Map[NonTerm, List[Int]] = nonTerms.allInts.map{ case nonTerm =>
+    val p = nonTerms(nonTerm) match {
+      case "ROOT" => List(0, 0)
+      case permRx(perm) => perm.split("").toList.tail.map{_.toInt}
+      case _ => List()
+    }
+    (nonTerm, p)
+  }.toMap
   
-  def copyConstructor(newRulesArg:Set[Rule]) : Grammar = {
-    new Grammar(newRulesArg, latentMappings, voc, nonTerms, latestSplits, dummy=dummy)
-  }
-  
-  private val alreadyDefinedROOTinners = rulesArg.filter{ rule =>
+  private lazy val alreadyDefinedROOTinners = rulesArg.filter{ rule =>
     rule.isInstanceOf[InnerRule] &&
     rule.lhs == ROOT             &&
     rule.asInstanceOf[InnerRule].rhs.head == ROOT
@@ -68,7 +69,7 @@ class Grammar ( rulesArg:Set[Rule],
     case _ => List()
   }.toMap
   
-  def allRules : Set[Rule] = innerRules.valuesIterator.toSet ++ pretermRules.valuesIterator.toSet
+  lazy val allRules:Traversable[Rule] = innerRules.valuesIterator.toTraversable ++ pretermRules.valuesIterator.toTraversable
   
   def getInnerRule(lhs:NonTerm, rhs:List[NonTerm]) : Rule = {
     if(dummy){
@@ -78,6 +79,24 @@ class Grammar ( rulesArg:Set[Rule],
       innerRules(representation)
     }
   }
+  
+  val pretermRulesForWord:Map[Word, List[PretermRule]] = pretermRules.values.groupBy{case PretermRule(_, word, _) => word}.mapValues{_.toList}.withDefaultValue(List())
+
+  val innerUnaryRulesForLeftmostNonTerm:Map[NonTerm, List[InnerRule]] = innerRules.values.
+  filter{
+    case InnerRule(_, rhs, _) => rhs.size == 1
+  }.
+  groupBy{
+    case InnerRule(_, List(rhs1, _*), _) => rhs1
+  }.mapValues{_.toList}.withDefaultValue(List())
+  
+  val innerNaryRulesForLeftmostNonTerm:Map[NonTerm, List[InnerRule]] = innerRules.values.
+  filter{
+    case InnerRule(_, rhs, _) => rhs.size > 1
+  }.
+  groupBy{
+    case InnerRule(_, List(rhs1, _*), _) => rhs1
+  }.mapValues{_.toList}.withDefaultValue(List())
   
   private val optimizedLatentInnerRulesQuery:Map[List[NonTerm], List[Rule]] = innerRules.values.groupBy{ case InnerRule(lhs, rhs, prob) =>
     (lhs::rhs).map{reverseLatentMappings(_)}
@@ -97,10 +116,6 @@ class Grammar ( rulesArg:Set[Rule],
   }
   
   def getAllLatentInnerRules(lhsOriginal:NonTerm, rhsOriginal:List[NonTerm]) : List[Rule] = {
-    for(el <- rhsOriginal){
-      if(nonTerms(el).endsWith("_0") || nonTerms(el).endsWith("_1"))
-        println(el+ " " + nonTerms(el))
-    }
     if(dummy){
       List(InnerRule(lhsOriginal, rhsOriginal, Probability(0.1)))
     }else{
@@ -113,17 +128,6 @@ class Grammar ( rulesArg:Set[Rule],
       List(PretermRule(lhsOriginal, word, Probability(0.1)))
     }else{
       optimizedLatentPretermRulesQuery((lhsOriginal,word))
-    }
-  }
-  
-  def getRuleIgnoringProb(rule:Rule) : Rule = {
-    if(dummy){
-      rule
-    }else{
-      rule match {
-        case InnerRule(lhs, rhs, _) => innerRules((lhs, rhs))
-        case PretermRule(lhs, word, _) => pretermRules((lhs, word))
-      }
     }
   }
   
@@ -162,13 +166,6 @@ class Grammar ( rulesArg:Set[Rule],
     pw.close()
   }
   
-//  override
-//  def toString() : String =
-//    this.allRules.toList.
-//      sortBy(rule => nonTerms(rule.lhs)).
-//      map{rule:Rule => rule.toString(voc, nonTerms)}.
-//      mkString("\n")
-
 }
 
 object Grammar{
@@ -207,7 +204,7 @@ object Grammar{
         rulesArg += InnerRule(nonTerms(lhsStr), rhsStr.split(" +").toList.map{nonTerms(_)}, Probability(prob.toDouble))
     }
     
-    new Grammar(rulesArg, latentMappings, voc, nonTerms, List())
+    new Grammar(rulesArg, latentMappings, voc, nonTerms)
   }
   
 }

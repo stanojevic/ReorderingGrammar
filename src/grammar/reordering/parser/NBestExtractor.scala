@@ -13,10 +13,11 @@ import grammar.reordering.representation.NonTerm
 import grammar.reordering.representation.InnerRule
 import grammar.reordering.representation.Edge
 import grammar.reordering.EM.InsideOutside
-import scala.collection.immutable.SortedSet
-import scala.collection.immutable.TreeSet
 import scala.collection.mutable.PriorityQueue
 import scala.annotation.tailrec
+import grammar.reordering.representation.NonTermSpan
+import gnu.trove.map.hash.TIntObjectHashMap
+import grammar.reordering.representation.`package`.PretermRule
 
 object NBestExtractor {
 
@@ -29,44 +30,67 @@ object NBestExtractor {
   
   def extractKbest(g:Grammar, chart:Chart, k:Int) : List[WeightedTreeNode] = {
     val n = chart.size
-    val bestChart : Array[Array[Map[NonTerm, Array[WeightedTreeNode]]]] =
-      Array.fill(n, n)(Map().withDefaultValue(Array()))
+    val bestChart : Array[Array[TIntObjectHashMap[Array[WeightedTreeNode]]]] =
+      Array.fill(n, n)(new TIntObjectHashMap[Array[WeightedTreeNode]]())
     
     for(i <- 0 until n){
-      for((lhs, nonTermSpan) <- chart(i)(i)){
+      val it = chart(i)(i).iterator()
+      while(it.hasNext()){
+        it.advance()
+        val lhs = it.key()
+        val nonTermSpan = it.value()
         val el = if(g.nonTerms(lhs).endsWith("N")) -1 else 1
         var bestK = List[WeightedTreeNode]()
         for(edge <- nonTermSpan.edges){
-          var C:SortedSet[WeightedTreeNode] = TreeSet.empty(orderingWTN)
           val prob = edge.rule.prob
-          C += ((TreeTerm(i, el), prob))
-          
-          bestK = merge(k, bestK, C.iterator.take(k).toList)
+          bestK = merge(k, bestK, List((TreeTerm(i, el), prob)))
         }
-        bestChart(i)(i) += lhs -> bestK.toArray
+        bestChart(i)(i).put(lhs, bestK.toArray)
       }
     }
     
     for(span <- 2 to n){
       for(i <- 0 until n-span+1){
         val j = i + span - 1
-        
-        for((lhs, nonTermSpan) <- chart(i)(j)){
-          var bestK = List[WeightedTreeNode]()
-          val operator = toOperator(g.nonTerms(lhs))
+
+        var unaryEdgeAndNTS = List[(Edge, NonTermSpan)]()
+        var naryEdgeAndNTS  = List[(Edge, NonTermSpan)]()
+        val it = chart(i)(j).iterator()
+        while(it.hasNext()){
+          it.advance()
+          val nonTermSpan = it.value()
           for(edge <- nonTermSpan.edges){
+            if(edge.splits.size == 0){
+              unaryEdgeAndNTS ::= (edge, nonTermSpan)
+            }else{
+              naryEdgeAndNTS  ::= (edge, nonTermSpan)
+            }
+          }
+        }
+    
+        
+        for(processUnary <- List(false, true)){
+          val edgeAndNTStoProcess = if(processUnary) unaryEdgeAndNTS else naryEdgeAndNTS
+          // var bestK = List[WeightedTreeNode]()
+          for((edge, nonTermSpan) <- edgeAndNTStoProcess){
+            val lhs = edge.rule.lhs
+            val operator = g.permutationMappings(lhs)
+            if(edge.rule.isInstanceOf[PretermRule]){
+              println("dios mio")
+            }
             val rule = edge.rule.asInstanceOf[InnerRule]
             val a = rule.rhs.size
             val spans = edge.children
-            val candidates = spans.map{case (start, end, nt) => bestChart(start)(end)(nt)}.toArray
+            val candidates = spans.map{case (start, end, nt) => bestChart(start)(end).get(nt)}.toArray
             val prob = edge.rule.prob
             
-            
             val C:PriorityQueue[WeightedTreeNodeVectorized] = PriorityQueue.empty(orderingWTNV)
-            var enqueued = Set[List[Int]]()
+            var enqueued = scala.collection.mutable.Set[List[Int]]()
 
             val initVec = Array.fill(a)(0).toList
             val children:List[WeightedTreeNode] = (0 until a).map{ childOrder =>
+              if(candidates(childOrder).size == 0)
+                println("oh my")
               candidates(childOrder)(0)
               }.toList
             val firstNode = constructNode(i, j, operator, rule.prob, children, initVec)
@@ -92,14 +116,15 @@ object NBestExtractor {
               
             }
             
-            bestK = merge(k, bestK, edgeBestK.reverse)
+            bestChart(i)(j).putIfAbsent(lhs, Array())
+            val newBest = merge(k, bestChart(i)(j).get(lhs).toList, edgeBestK.reverse)
+            bestChart(i)(j).put(lhs, newBest.toArray)
           }
-          bestChart(i)(j) += lhs -> bestK.toArray
         }
       }
     }
     
-    bestChart(0)(n-1)(g.ROOT).toList
+    bestChart(0)(n-1).get(g.ROOT).toList
   }
   
   @tailrec
@@ -172,18 +197,6 @@ object NBestExtractor {
     }
     
     Some(retrieved.reverse)
-  }
-  
-  private val binaryPerm = """.*P(.)(.)$""".r
-  private val fourPerm = """.*P(.)(.)(.)(.)$""".r
-  private val fivePerm = """.*P(.)(.)(.)(.)(.)$""".r
-  private def toOperator(s:String) : List[Int] = {
-    s match{
-      case Grammar.ROOTtoken            => List(0, 0)
-      case binaryPerm(x1, x2)           => List(x1, x2).map{_.toInt}
-      case fourPerm(x1, x2, x3, x4)     => List(x1, x2, x3, x4).map{_.toInt}
-      case fivePerm(x1, x2, x3, x4, x5) => List(x1, x2, x3, x4, x5).map{_.toInt}
-    }
   }
 
 }

@@ -27,6 +27,10 @@ class IntMapping {
 
   // private var inverseVoc = Map[Int, String]()
   
+  def size() : Int = {
+    inverseVoc.size
+  }
+  
   /**
    * not thread safe
    */

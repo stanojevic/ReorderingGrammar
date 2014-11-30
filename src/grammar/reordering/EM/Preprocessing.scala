@@ -8,10 +8,14 @@ import beer.permutation.pet.representation.TreeNode
 object Preprocessing {
   
   private type Word = String
+
+  def prepareTrainingDataForUnknownWords( sents : List[String] , maxUnknownCount:Int = 3) : List[String] = {
+    prepareTrainingDataForUnknownWordsDetailed(sents.map{_.split(" +").toList}, maxUnknownCount).map{_.mkString(" ")}
+  }
   
-  def prepareTrainingDataForUnknownWords(
+  private def prepareTrainingDataForUnknownWordsDetailed(
       sents:List[List[Word]],
-      maxUnknownCount:Int=3) : List[List[Word]] = {
+      maxUnknownCount:Int) : List[List[Word]] = {
     var counts = scala.collection.mutable.Map[String, Int]().withDefaultValue(0)
     for(sent <- sents){
       for(word <- sent){

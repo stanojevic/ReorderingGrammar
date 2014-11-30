@@ -116,7 +116,7 @@ object AlignmentCanonicalParser {
     }
   }
   
-  private def printDotTree(pw:PrintStream, tree:TreeNode, graphLabel:String, nodeId:String="node0") : List[(String, Term)] = {
+  private def printDotTree(pw:PrintStream, tree:TreeNode, sent:List[String], graphLabel:String, nodeId:String="node0") : List[(String, Term)] = {
     val colorMapping = Map[String, String](
         "<1,2>" -> "green3",
         "<2,1>" -> "firebrick1"
@@ -138,7 +138,7 @@ object AlignmentCanonicalParser {
           val childName = nodeId+index
           child match {
             case NonTerm(start, end, _, _, operator, children) =>
-              terms ++= printDotTree(pw, child, graphLabel, childName)
+              terms ++= printDotTree(pw, child, sent, graphLabel, childName)
               pw.println(nodeId+" -- "+childName+" ;")
             case term @ Term(position, el) =>
               terms ++= List((childName, term))
@@ -159,7 +159,8 @@ object AlignmentCanonicalParser {
             }else{
               style += "bold"
             }
-            pw.println("  "+termName+"[shape=box; label="+pos+style+"; color="+terminalColor+"];")
+            val word:String = "\""+sent(pos)+s" ($pos)"+"\""
+            pw.println("  "+termName+"[shape=box; label="+word+style+"; color="+terminalColor+"];")
             // pw.println("  term"+(pos+1)+"[shape=box; label="+el+"; color="+terminalColor+"];")
           }
           pw.println("edge[style=\"invis\"];")
@@ -176,11 +177,18 @@ object AlignmentCanonicalParser {
   }
 
   def visualizeTree(tree:TreeNode, label:String) : Unit = {
+    val n = tree.count(_.isInstanceOf[Term])
+    val fakeSent = (0 to 2*n).toList.map{_.toString}
+    visualizeTree(tree, fakeSent, label)
+  }
+
+  def visualizeTree(tree:TreeNode, sent:List[String], label:String) : Unit = {
     val file = File.createTempFile("visual", "")
     file.deleteOnExit()
     val tmpFileName = file.getPath()
     val pw = new PrintStream(s"$tmpFileName.dot")
-    printDotTree(pw, tree, label)
+    println(s"DOT FILE $tmpFileName.dot")
+    printDotTree(pw, tree, sent, label)
     pw.close()
 
     val dotCmd = s"dot -Tpng $tmpFileName.dot -O"

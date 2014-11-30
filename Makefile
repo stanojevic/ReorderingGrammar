@@ -39,17 +39,17 @@ $(LIB): $(SCALA_DIR)
 #
 	wget https://oss.sonatype.org/content/groups/public/org/scalatest/scalatest_2.11/2.2.1/scalatest_2.11-2.2.1.jar -O $(LIB)/scalatest_2.11-2.2.1.jar
 #
-	wget https://bitbucket.org/robeden/trove/downloads/trove-3.0.3.zip
-	unzip trove-3.0.3.zip
-	mv 3.0.3/lib/trove-*.jar $(LIB)
-	rm -rf 3.0.3/ trove*
+	wget https://bitbucket.org/robeden/trove/downloads/trove-3.1a1.zip
+	unzip trove-3.1a1.zip
+	mv 3.1a1/lib/trove-*.jar $(LIB)
+	rm -rf 3.1a1/ trove*
 #
 	wget https://staff.fnwi.uva.nl/m.stanojevic/beer/beer_1.0.jar -O $(LIB)/beer_1.0.jar
 
 jar: bin
 	echo "Manifest-Version: 1.0" > Manifest.txt
 	echo Class-Path: `find ./$(LIB) -name \*.jar | tr "\n" " "` >> Manifest.txt
-	echo Main-Class: beer.Evaluation >> Manifest.txt
+	echo Main-Class: grammar.reordering.Main >> Manifest.txt
 	rm -f rg_$(RG_VERSION).jar
 	jar -cfm rg_$(RG_VERSION).jar Manifest.txt -C bin .
 	rm Manifest.txt

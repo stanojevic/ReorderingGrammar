@@ -23,25 +23,29 @@ class CYKTest extends FlatSpec with ShouldMatchers{
         "1-3 2-0 3-3 4-1"
         )
     val batchSize = 1
-    val parallel = true
+    val threads = 2
+    val lambda = 0.1
+    val flattenInChart = true
     
-    val gInit = InsideOutside.initialIteration(sents, alignments)
+    val gInit = InsideOutside.initialIteration(sents zip alignments)
     val gSplitInit = SplitMerge.split(gInit, Map().withDefaultValue(1.0))
     val gSplitInit2 = SplitMerge.split(gSplitInit, Map().withDefaultValue(1.0))
     val gSplitInit3 = SplitMerge.split(gSplitInit2, Map().withDefaultValue(1.0))
     val gSplitInit4 = SplitMerge.split(gSplitInit3, Map().withDefaultValue(1.0))
 
     var g:Grammar = gSplitInit4
+    
+    val trainingData = (sents zip alignments)
 
     for(i <- 1 to 10){
-      val (expectedCounts, mergeLikelihood, likelihood) = InsideOutside.expectation(sents, alignments, g, batchSize, parallel)
+      val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads)
       g = InsideOutside.maximization(g, expectedCounts)
       println(s"iteration $i $likelihood")
     }
 
 
     val sent = sents.head.split(" +").toList
-    val chart = CYK.buildChart(g, sent)
+    val chart = CYK.buildChart(g, sent, lambda)
     // TODO is the chart right?
     println("Didn't crash :)")
     
@@ -68,31 +72,38 @@ class CYKTest extends FlatSpec with ShouldMatchers{
         "1-3 2-0 3-3 4-1"
         )
     val batchSize = 1
-    val parallel = true
+    val threads = 2
+    val lambda = 0.1
+    val flattenInChart = true
     
-    val gInit = InsideOutside.initialIteration(sents, alignments)
+    val gInit = InsideOutside.initialIteration(sents zip alignments)
     val gSplitInit = SplitMerge.split(gInit, Map().withDefaultValue(1.0))
     val gSplitInit2 = SplitMerge.split(gSplitInit, Map().withDefaultValue(1.0))
     val gSplitInit3 = SplitMerge.split(gSplitInit2, Map().withDefaultValue(1.0))
     val gSplitInit4 = SplitMerge.split(gSplitInit3, Map().withDefaultValue(1.0))
 
     var g:Grammar = gSplitInit4
+    
+    val trainingData = (sents zip alignments)
 
     for(i <- 1 to 10){
-      val (expectedCounts, mergeLikelihood, likelihood) = InsideOutside.expectation(sents, alignments, g, batchSize, parallel)
+      val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads)
       g = InsideOutside.maximization(g, expectedCounts)
       println(s"iteration $i $likelihood")
     }
 
     var sent = sents.head.split(" +").toList
     sent = sent++sent++sent++sent++sent
-    val chart = CYK.buildChart(g, sent)
+    val chart = CYK.buildChart(g, sent, lambda)
     // TODO is the chart right?
     println("Didn't crash :)")
     
     val pw = new PrintWriter("output")
     
-    for(nonTermSpan <- chart(0)(sent.size-1).values){
+    val it = chart(0)(sent.size-1).iterator()
+    while(it.hasNext()){
+      it.advance()
+      val nonTermSpan = it.value()
       pw.println(nonTermSpan.toString(g))
     }
     pw.close
@@ -102,13 +113,19 @@ class CYKTest extends FlatSpec with ShouldMatchers{
     
     val pw2 = new PrintWriter("outputDeLatent")
     
-    for(nonTermSpan <- delatentizedChart(0)(sent.size-1).values){
+    val itDelatentized = delatentizedChart(0)(sent.size-1).iterator()
+    while(itDelatentized.hasNext()){
+      itDelatentized.advance()
+      val nonTermSpan = itDelatentized.value()
       pw2.println(nonTermSpan.toString(g))
     }
     pw2.println()
     pw2.println()
     pw2.println()
-    for(nonTermSpan <- delatentizedChart(0)(1).values){
+    val itDelatentized2 = delatentizedChart(0)(1).iterator()
+    while(itDelatentized2.hasNext()){
+      itDelatentized2.advance()
+      val nonTermSpan = itDelatentized2.value()
       pw2.println(nonTermSpan.toString(g))
     }
     pw2.close

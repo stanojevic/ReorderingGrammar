@@ -121,9 +121,9 @@ object SplitMerge {
           }
           PretermRule(lhs, word, Probability(prob.toDouble+randomness))
         }
-    }
+    }.toSet
 
-    new Grammar(normalize(newRules), newLatentMappings, oldVoc, newNonTerms, newSplits)
+    new Grammar(normalize(newRules), newLatentMappings, oldVoc, newNonTerms)
   }
   
   def smoothSplits(oldG:Grammar) : Grammar = {
@@ -144,7 +144,7 @@ object SplitMerge {
         }.toList
     }.toSet
 
-    new Grammar(normalize(newRules), oldG.latentMappings, oldG.voc, oldG.nonTerms, oldG.latestSplits)
+    new Grammar(normalize(newRules), oldG.latentMappings, oldG.voc, oldG.nonTerms)
   }
   
   def merge(oldG:Grammar) : Grammar = {

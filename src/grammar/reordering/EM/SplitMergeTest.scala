@@ -19,7 +19,7 @@ class SplitMergeTest extends FlatSpec with ShouldMatchers{
     val alignment = "1-1 2-0 3-0 4-0"
     val sent = "Nekakva recenica koja nema mnogo smisla"
     
-    val g = InsideOutside.initialIteration(List(sent), List(alignment))
+    val g = InsideOutside.initialIteration(List(sent) zip List(alignment))
     val g1 = SplitMerge.split(g, Map().withDefaultValue(1.0))
     val g2 = SplitMerge.split(g1, Map().withDefaultValue(1.0))
 
@@ -43,9 +43,9 @@ class SplitMergeTest extends FlatSpec with ShouldMatchers{
         )
 
     val batchSize = 1
-    val parallel = true
+    val threads = 2
     
-    val gInit = InsideOutside.initialIteration(sents, alignments)
+    val gInit = InsideOutside.initialIteration(sents zip alignments)
     val gSplitInit = SplitMerge.split(gInit, Map().withDefaultValue(1.0))
     val gSplitInit2 = SplitMerge.split(gSplitInit, Map().withDefaultValue(1.0))
     val gSplitInit3 = SplitMerge.split(gSplitInit2, Map().withDefaultValue(1.0))
@@ -53,7 +53,6 @@ class SplitMergeTest extends FlatSpec with ShouldMatchers{
     
     var grammars = List[Grammar](gSplitInit4)
     var likelihoods = List[Probability](LogNil)
-    var mergeLikelihoods = List[Map[(NonTerm, NonTerm, NonTerm), Probability]]()
     
     var iteration = 1
     var difference = LogOne
@@ -61,9 +60,11 @@ class SplitMergeTest extends FlatSpec with ShouldMatchers{
     // val limit = 0.000000000000000000000000001
     val limit = Double.NegativeInfinity 
     
+    val trainingData = (sents zip alignments)
+    
     while(difference.toDouble>=limit && iteration < 30){
       println(s"Starting training iteration $iteration")
-      val (expectedCounts, mergeLikelihood, likelihood) = InsideOutside.expectation(sents, alignments, grammars.head, batchSize, parallel)
+      val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, grammars.head, batchSize, threads)
       val gNew = InsideOutside.maximization(grammars.head, expectedCounts)
       
       difference = likelihood - likelihoods.head
@@ -71,7 +72,6 @@ class SplitMergeTest extends FlatSpec with ShouldMatchers{
       if(difference.toDouble>=limit){
         grammars ::= gNew
         likelihoods ::= likelihood
-        mergeLikelihoods ::= mergeLikelihood
       }else{
         println("bad stuff")
       }
@@ -81,13 +81,6 @@ class SplitMergeTest extends FlatSpec with ShouldMatchers{
     }
     println(s"\nBest grammar "+grammars.size+" "+likelihoods.head+"\n")
     SplitMerge.smoothSplits(grammars.head).save("./grammars/grammar.txt")
-
-    // val streamMerge = new PrintWriter("./mergeLikelihood.txt")
-    // for(el <- mergeLikelihoods.last){
-    //   streamMerge.println(el)
-    // }
-    // if(streamMerge != System.out)
-    //   streamMerge.close()
   }
 
   "loading and resaving the grammar" should "not break" in {
@@ -102,7 +95,7 @@ class SplitMergeTest extends FlatSpec with ShouldMatchers{
     val alignments = rawAlignments.map{AlignmentCanonicalParser.extractAlignment(_)}
     
     val maxUnknownCount = 3
-    val sents = Preprocessing.prepareTrainingDataForUnknownWords(rawSents, maxUnknownCount)
+    val sents = Preprocessing.prepareTrainingDataForUnknownWords(rawRawSents, maxUnknownCount)
     
     val filtered = (sents zip alignments).filter{ case (sent, a) =>
       val arity = Preprocessing.maxArity(a)
@@ -112,9 +105,9 @@ class SplitMergeTest extends FlatSpec with ShouldMatchers{
     println("Selected: "+filtered.size)
     
     val t1 = System.currentTimeMillis()
-    var trainingSents = filtered.map{_._1.mkString(" ")}
+    var trainingSents = filtered.map{_._1}
     var trainingAlignments = filtered.map{_._2.map{case (i, j) => s"$i-$j"}.mkString(" ")}
-    val initG = InsideOutside.initialIteration(trainingSents, trainingAlignments)
+    val initG = InsideOutside.initialIteration(trainingSents zip trainingAlignments)
     val t2 = System.currentTimeMillis()
     val periodInit = t2-t1
     println(s"time for init run: $periodInit ms")
@@ -138,13 +131,14 @@ class SplitMergeTest extends FlatSpec with ShouldMatchers{
 
     trainingSents = trainingSents.take(10)
     trainingAlignments = trainingAlignments.take(10)
+    val trainingData = trainingSents zip trainingAlignments
     val iterations = 9
     val batchSize = 5
-    val parallel = false
+    val threads = 2
     for(iter <- 1 to iterations){
       println("STARTING STUPID ITERATION")
       val t5 = System.currentTimeMillis()
-      val res = InsideOutside.iteration(trainingSents, trainingAlignments, currentG, batchSize, parallel)
+      val res = InsideOutside.iteration(trainingData, currentG, batchSize, threads)
       currentG = res._1 
       val likelihood = res._2
       val t6 = System.currentTimeMillis()

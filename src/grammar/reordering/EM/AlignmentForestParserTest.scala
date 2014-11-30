@@ -56,7 +56,6 @@ class AlignmentForestParserTest extends FlatSpec with ShouldMatchers{
         latentMappings = AlignmentForestParser.defaultLatentMappings,
         nonTerms = AlignmentForestParser.defaultNonTerms,
         voc = voc,
-        latestSplits = List(),
         dummy=true
         )
     
@@ -67,8 +66,8 @@ class AlignmentForestParserTest extends FlatSpec with ShouldMatchers{
       for(i <- 0 until n-span+1){
         val j = i + span -1
         for(lhs <- chart(i)(j).keys){
-          println(s"A $lhs [$i $j] edge_size="+chart(i)(j)(lhs).edges.size)
-          for(edge <- chart(i)(j)(lhs).edges){
+          println(s"A $lhs [$i $j] edge_size="+chart(i)(j).get(lhs).edges.size)
+          for(edge <- chart(i)(j).get(lhs).edges){
             println(edge.toString(voc, nonTerms))
           }
         }

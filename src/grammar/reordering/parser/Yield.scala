@@ -21,7 +21,7 @@ object Yield {
   def treeToPermutation(node:TreeNode) : List[Int] = node match {
     case TreeTerm(pos, el) =>
       if(el < 0){
-        List(-1)
+        List(-el)
       }else{
         List(pos)
       }
