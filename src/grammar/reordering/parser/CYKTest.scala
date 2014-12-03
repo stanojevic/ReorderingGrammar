@@ -4,8 +4,8 @@ import org.scalatest.FlatSpec
 import org.scalatest.matchers.ShouldMatchers
 import grammar.reordering.representation.Grammar
 import grammar.reordering.EM.InsideOutside
-import grammar.reordering.EM.SplitMerge
 import java.io.PrintWriter
+import grammar.reordering.EM.GrammarSplitter
 
 class CYKTest extends FlatSpec with ShouldMatchers{
 
@@ -28,12 +28,8 @@ class CYKTest extends FlatSpec with ShouldMatchers{
     val flattenInChart = true
     
     val gInit = InsideOutside.initialIteration(sents zip alignments)
-    val gSplitInit = SplitMerge.split(gInit, Map().withDefaultValue(1.0))
-    val gSplitInit2 = SplitMerge.split(gSplitInit, Map().withDefaultValue(1.0))
-    val gSplitInit3 = SplitMerge.split(gSplitInit2, Map().withDefaultValue(1.0))
-    val gSplitInit4 = SplitMerge.split(gSplitInit3, Map().withDefaultValue(1.0))
 
-    var g:Grammar = gSplitInit4
+    var g:Grammar = GrammarSplitter.split(gInit, threads)
     
     val trainingData = (sents zip alignments)
 
@@ -77,12 +73,7 @@ class CYKTest extends FlatSpec with ShouldMatchers{
     val flattenInChart = true
     
     val gInit = InsideOutside.initialIteration(sents zip alignments)
-    val gSplitInit = SplitMerge.split(gInit, Map().withDefaultValue(1.0))
-    val gSplitInit2 = SplitMerge.split(gSplitInit, Map().withDefaultValue(1.0))
-    val gSplitInit3 = SplitMerge.split(gSplitInit2, Map().withDefaultValue(1.0))
-    val gSplitInit4 = SplitMerge.split(gSplitInit3, Map().withDefaultValue(1.0))
-
-    var g:Grammar = gSplitInit4
+    var g:Grammar = GrammarSplitter.split(gInit, threads)
     
     val trainingData = (sents zip alignments)
 

@@ -28,7 +28,7 @@ class BatchEMTest extends FlatSpec with ShouldMatchers {
     val threads = 3
     
     val gInit = InsideOutside.initialIteration(sents zip alignments)
-    val gSplit = GrammarSplitter.split(gInit)
+    val gSplit = GrammarSplitter.split(gInit, threads)
     
     var iteration = 1
     var difference = LogOne
@@ -45,7 +45,7 @@ class BatchEMTest extends FlatSpec with ShouldMatchers {
     }
     
     val stoppingCriteria : (Probability, Probability, Int) => Boolean = iterationNumberStopper(_, _, _, 30)
-    val grammarStorageDir = "online_EM_grammars"
+    val grammarStorageDir = "batch_EM_grammars"
       
     val trainingData = (sents zip alignments)
     

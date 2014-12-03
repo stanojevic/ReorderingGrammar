@@ -124,16 +124,6 @@ object InsideOutside {
     }
   }
   
-  def iteration( trainingData:List[(String, String)],
-                 g:Grammar,
-                 batchSize:Int,
-                 threads:Int
-                    ) : (Grammar, Double) = {
-    val (expectedCounts, likelihood) = expectation(trainingData, g, batchSize, threads)
-    val newGrammar = maximization(g, expectedCounts)
-    (newGrammar, likelihood.log)
-  }
-  
   def expectation(
                  trainingData:List[(String, String)],
                  g:Grammar,
@@ -150,6 +140,8 @@ object InsideOutside {
                             trainingData.grouped(batchSize).toList
                           }
     var processed = 0
+    var startTime = System.currentTimeMillis()
+    val totalSentsToProcess = trainingData.size
 
     val (
         expectedCounts:Map[Rule, Double],
@@ -159,36 +151,23 @@ object InsideOutside {
         val a = AlignmentCanonicalParser.extractAlignment(alignment)
         val s = sent.split(" +").toList
   
-        // var t1 = System.currentTimeMillis()
         val chart:Chart = AlignmentForestParser.parse(s, a, g)
-        // var t2 = System.currentTimeMillis()
-        // println((t2-t1)+" ms for forest parsing")
 
-        // t1 = System.currentTimeMillis()
         this.inside(chart, g)
-        // t2 = System.currentTimeMillis()
-        // println((t2-t1)+" ms for inside")
 
-        // t1 = System.currentTimeMillis()
         this.outside(chart, g)
-        // t2 = System.currentTimeMillis()
-        // println((t2-t1)+" ms for outside")
 
-        // t1 = System.currentTimeMillis()
         val chartExpectations:Map[Rule, Double] = this.computeExpectedCountPerChart(chart, g)
-        // t2 = System.currentTimeMillis()
-        // println((t2-t1)+" ms for computeExpectedCountPerChart")
 
         val n = chart.size
         val sentProb:Probability = chart(0)(n-1).get(g.ROOT).inside
 
         processed += 1
-        if(processed % 10 == 0){
-          System.err.println(processed)
-          // t1 = System.currentTimeMillis()
-          // System.gc()
-          // t2 = System.currentTimeMillis()
-          // println((t2-t1)+" ms for gc")
+        if(processed % 10000 == 0){
+          var newTime = System.currentTimeMillis()
+          var period = newTime - startTime
+          System.err.println(s"$processed/$totalSentsToProcess ; last chunk processed for $period ms")
+          startTime = newTime
         }
 
         (chartExpectations, sentProb)
@@ -199,34 +178,33 @@ object InsideOutside {
   }
   
   def maximization(g:Grammar, expectedCounts:scala.collection.Map[Rule, Double]) : Grammar = {
-    val newRules:Set[Rule] = g.allRules.groupBy{ rule:Rule => rule.lhs }.flatMap{case (lhs:NonTerm, rules:Stream[Rule]) =>
-      val lhsExpectedCount:Double = rules.toList.map{ rule =>
-        expectedCounts(rule)
-      }.sum
-      if(lhsExpectedCount == 0.0){
-        List()
-      }else{
-        rules.foreach{rule =>
-          if((expectedCounts(rule)/lhsExpectedCount).isNaN){
-            val r1 = rules.toList
-            val r2 = rules.toList
-            val nums:List[Double] = r1.map{expectedCounts.getOrElse(_, 0.0)}
-            println("nan")
-            r1++r2
-          }
-        }
-        rules.map{
-          case rule:InnerRule   => rule.copy(p = Probability(expectedCounts(rule)/lhsExpectedCount))
-          case rule:PretermRule => rule.copy(p = Probability(expectedCounts(rule)/lhsExpectedCount))
-        }
-      }
-    }.toSet
+    System.err.println(s"STARTING maximization")
+    val t1 = System.currentTimeMillis()
+    var newRules = List[Rule]()
+    val normalizations = scala.collection.mutable.Map[NonTerm, Double]().withDefaultValue(0.0)
+
+    for((rule, counts) <- expectedCounts){
+      normalizations(rule.lhs) = normalizations(rule.lhs) + counts
+    }
     
+    for((rule, counts) <- expectedCounts){
+      val newProb = Probability(counts/normalizations(rule.lhs))
+      rule match {
+        case InnerRule(lhs, rhs, _) =>
+          newRules ::= InnerRule(lhs, rhs, newProb)
+        case PretermRule(lhs, word, _) =>
+          newRules ::= PretermRule(lhs, word, newProb)
+      }
+    }
+
     val newGrammar = new Grammar(rulesArg = newRules, latentMappings = g.latentMappings, voc = g.voc, nonTerms = g.nonTerms )
+    val t2 = System.currentTimeMillis()
+    val period = t2 - t1
+    System.err.println(s"DONE maximization, took $period ms")
     
     newGrammar
   }
-  
+
   private def sumExpectations(
       a:(Map[Rule, Double], Probability),
       b:(Map[Rule, Double], Probability))
@@ -253,9 +231,9 @@ object InsideOutside {
     val voc = new IntMapping()
     var allRuleCounts = scala.collection.mutable.Map[Rule, Double]().withDefaultValue(0.0)
     val g = new Grammar(
-        rulesArg = Set(),
-        latentMappings = AlignmentForestParser.defaultLatentMappings,
-        nonTerms = AlignmentForestParser.defaultNonTerms,
+        rulesArg = List(),
+        latentMappings = AlignmentForestParser.defaultLatentMappingsUnmarked,
+        nonTerms = AlignmentForestParser.defaultNonTermsUnmarked,
         voc = voc,
         dummy=true
         )
@@ -269,23 +247,22 @@ object InsideOutside {
         allRuleCounts(rule) = allRuleCounts(rule)+count
       }
       processed += 1
-      if(processed % 100 == 0){
+      if(processed % 10000 == 0){
         System.err.println(processed)
       }
     }
-    val newRules:Set[Rule] = allRuleCounts.keySet.groupBy{rule:Rule => rule.lhs}.flatMap{case (lhs:NonTerm, rules:Set[Rule]) =>
+    val newRules:List[Rule] = allRuleCounts.keySet.groupBy{rule:Rule => rule.lhs}.flatMap{case (lhs:NonTerm, rules:Set[Rule]) =>
       val lhsExpectedCount:Double = rules.toList.map{allRuleCounts(_)}.sum
-      //Grammar.testNonRepeatingRules(rules)
       rules.map{
         case rule:InnerRule   => rule.copy(p = Probability(allRuleCounts(rule) / lhsExpectedCount))
         case rule:PretermRule => rule.copy(p = Probability(allRuleCounts(rule) / lhsExpectedCount))
       }
-    }.toSet.asInstanceOf[Set[Rule]]
+    }.asInstanceOf[List[Rule]]
 
     val newGrammar = new Grammar(
         rulesArg = newRules,
-        latentMappings = AlignmentForestParser.defaultLatentMappings,
-        nonTerms = AlignmentForestParser.defaultNonTerms,
+        latentMappings = AlignmentForestParser.defaultLatentMappingsUnmarked,
+        nonTerms = AlignmentForestParser.defaultNonTermsUnmarked,
         voc = voc
         )
     

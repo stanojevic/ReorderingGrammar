@@ -9,12 +9,14 @@ import java.io.File
 import scala.collection.parallel.ForkJoinTaskSupport
 import grammar.reordering.representation.InnerRule
 import grammar.reordering.representation.PretermRule
+import java.text.SimpleDateFormat
+import java.util.Date
 
 object OnlineEM {
   
   def runTraining(
                  stoppingCriteria : (Probability, Probability, Int) => Boolean,
-                 grammarStoragePrefix : String,
+                 output : String,
                  trainingData:List[(String, String)],
                  initG:Grammar,
                  threads:Int,
@@ -33,14 +35,25 @@ object OnlineEM {
     var it = 0
     var currentG = initG
 
+    val wordCount:Double = trainingData.map{_._1.split(" +").size}.sum
+
     do{
+      val ft = new SimpleDateFormat ("HH:mm dd.MM.yyyy")
+      val date = ft.format(new Date())
+      System.err.println(s"Iteration $it started at $date")
+      System.err.println()
+
       val result = iteration(trainingData, currentG, threads, threadBatchSize, onlineBatchSize, currentCounts, alphaRate)
       currentG = result._1
       currentLikelihood = result._2
       currentCounts = result._3
       
-      currentG.save(grammarStoragePrefix+"_grammar_"+it)
-      println(s"\nGrammar $it $currentLikelihood\n")
+      currentG.save(output+"/grammar_"+it)
+      val perplexityPerWord = Math.exp(-currentLikelihood.log/wordCount)
+      System.err.println()
+      System.err.println(s"Grammar $it: likelihood $currentLikelihood")
+      System.err.println(s"Grammar $it: Perplexity per word $perplexityPerWord")
+      System.err.println()
       
       it += 1
     }while( ! stoppingCriteria(prevLikelihood, currentLikelihood, it))
@@ -67,6 +80,8 @@ object OnlineEM {
     var totalProb = LogOne
     
     trainingData.grouped(onlineBatchSize).foreach{ trainingBatch =>
+      System.err.println(s"START expectations")
+      val t1 = System.currentTimeMillis()
       val nks = (k until k+onlineBatchSize).map{ k => Math.pow(k+2, -alphaRate)}.toList
 
       val sf:(Double, List[Double]) = computeScalingFactors(rollingDenominator, nks)
@@ -118,6 +133,9 @@ object OnlineEM {
           counts(rule)+=count
         }
       }
+      val t2 = System.currentTimeMillis()
+      val period = t2 - t1
+      System.err.println(s"DONE expectations, took $period ms")
       
       val newG = InsideOutside.maximization(currentG, counts)
       

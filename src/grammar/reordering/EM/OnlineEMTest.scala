@@ -29,7 +29,7 @@ class OnlineEMTest extends FlatSpec with ShouldMatchers{
     val threads = 3
     
     val gInit = InsideOutside.initialIteration(sents zip alignments)
-    val gSplit = GrammarSplitter.split(gInit)
+    val gSplit = GrammarSplitter.split(gInit, threads)
     
     var iteration = 1
     var difference = LogOne

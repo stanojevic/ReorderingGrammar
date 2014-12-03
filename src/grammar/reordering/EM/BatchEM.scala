@@ -5,12 +5,14 @@ import grammar.reordering.representation.Probability.{LogNil}
 import grammar.reordering.representation.Grammar
 import grammar.reordering.representation.Rule
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
 
 object BatchEM {
 
   def runTraining(
                  stoppingCriteria : (Probability, Probability, Int) => Boolean,
-                 grammarStoragePrefix : String,
+                 output : String,
                  trainingData:List[(String, String)],
                  initG:Grammar,
                  threads:Int,
@@ -26,14 +28,25 @@ object BatchEM {
     var currentLikelihood = LogNil // unimporant initialization
     var it = 0
     var currentG = initG
+    
+    val wordCount:Double = trainingData.map{_._1.split(" +").size}.sum
 
     do{
+      val ft = new SimpleDateFormat ("HH:mm dd.MM.yyyy")
+      val date = ft.format(new Date())
+      System.err.println(s"Iteration $it started at $date")
+      System.err.println()
+
       val result = iteration(trainingData, currentG, threadBatchSize, threads)
       currentG = result._1
       currentLikelihood = result._2
       
-      currentG.save(grammarStoragePrefix+"_grammar_"+it)
-      System.err.println(s"\nGrammar $it $currentLikelihood\n")
+      currentG.save(output+"/grammar_"+it)
+      val perplexityPerWord = Math.exp(-currentLikelihood.log/wordCount)
+      System.err.println()
+      System.err.println(s"Grammar $it: likelihood $currentLikelihood")
+      System.err.println(s"Grammar $it: Perplexity per word $perplexityPerWord")
+      System.err.println()
       
       it += 1
     }while( ! stoppingCriteria(prevLikelihood, currentLikelihood, it))
@@ -45,7 +58,15 @@ object BatchEM {
                  batchSize:Int,
                  threads:Int
                     ) : (Grammar, Probability) = {
+    System.err.println(s"STARTED expectations")
+    val t1 = System.currentTimeMillis()
+
     val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads)
+    
+    val t2 = System.currentTimeMillis()
+    val period = t2 - t1
+    System.err.println(s"DONE expectations took $period ms")
+
     val newGrammar = InsideOutside.maximization(g, expectedCounts)
     (newGrammar, likelihood)
   }

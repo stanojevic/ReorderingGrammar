@@ -49,12 +49,12 @@ class AlignmentForestParserTest extends FlatSpec with ShouldMatchers{
     val voc = new IntMapping()
     words.foreach(voc(_))
     
-    val nonTerms = AlignmentForestParser.defaultNonTerms
+    val nonTerms = AlignmentForestParser.defaultNonTermsUnmarked
     
     val g = new Grammar(
-        rulesArg = Set(),
-        latentMappings = AlignmentForestParser.defaultLatentMappings,
-        nonTerms = AlignmentForestParser.defaultNonTerms,
+        rulesArg = List(),
+        latentMappings = AlignmentForestParser.defaultLatentMappingsUnmarked,
+        nonTerms = AlignmentForestParser.defaultNonTermsUnmarked,
         voc = voc,
         dummy=true
         )

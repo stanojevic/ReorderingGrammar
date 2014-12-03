@@ -10,8 +10,9 @@ import grammar.reordering.EM.OnlineEM
 import java.io.File
 import grammar.reordering.EM.Preprocessing
 import grammar.reordering.EM.AlignmentCanonicalParser
+import java.io.PrintWriter
 
-object Main {
+object Train {
   
   private case class Config(
       sourceFN : String = "",
@@ -75,7 +76,6 @@ object Main {
         c.copy(onlineAlpha = x)
       }
 
-      note("some notes.\n")
       help("help") text("prints this usage text")
     }
 
@@ -84,15 +84,17 @@ object Main {
   private def loadOrMakeInitGrammar(
       initIterationFN:String,
       trainingData:List[(String, String)],
-      grammarOutputPrefix:String) : Grammar = {
+      grammarOutputPrefix:String,
+      threads:Int ) : Grammar = {
     if(initIterationFN == null){
       System.err.println("START creating init grammar")
       val initG = InsideOutside.initialIteration(trainingData)
       System.err.println("DONE creating init grammar")
       System.err.println("START splitting init grammar")
-      val splittedGrammar = GrammarSplitter.split(initG)
+      val splittedGrammar = GrammarSplitter.split(initG, threads)
       System.err.println("DONE splitting init grammar")
       splittedGrammar.save(grammarOutputPrefix+"initGrammar")
+      System.err.println("init grammar is saved")
       splittedGrammar
     }else{
       Grammar.loadFromFile(initIterationFN)
@@ -124,43 +126,58 @@ object Main {
       System.err.println("Alignment file "+config.alignmentFN+" doesn't exist")
       System.exit(-1)
     }
-    val f = new File(config.outputPrefix+"testingFile")
-    f.createNewFile()
-    f.delete()
+    val storageDir = new File(config.outputPrefix)
+    if( ! storageDir.isDirectory()){
+      System.err.println("Output should be an existing directory")
+      System.exit(-1)
+    }
   }
   
   private def loadSents(file: String) : List[String] = Source.fromFile(file).getLines().toList
   
-  private def preprocess(oldData : List[(String, String)]) : List[(String, String)] = {
+  private def filtering(oldData : List[(String, String)]) : List[(String, String)] = {
     System.err.println("STARTED filtering")
     var processed = 0
     val newData = oldData.filter{ case (sent, alignment) =>
       processed += 1
-      if(processed % 100 == 0){
+      if(processed % 10000 == 0){
         System.err.println(processed)
       }
       val a = AlignmentCanonicalParser.extractAlignment(alignment)
       val arity = Preprocessing.maxArity(a)
 
-      arity <= 5 && Preprocessing.numAlignedWords(a) >=2
+      arity <= 4 && Preprocessing.numAlignedWords(a) >=2
     }
     System.err.println("DONE filtering")
+    System.err.println("kept "+newData.size+" out of "+oldData.size)
     
     newData
+  }
+  
+  private def saveData(srcFN:String, alignFN:String, data:List[(String, String)]) : Unit = {
+    val srcPW = new PrintWriter(srcFN)
+    val alignPW = new PrintWriter(alignFN)
+    for((srcSent, alignment) <- data){
+      srcPW.println(srcSent)
+      alignPW.println(alignment)
+    }
+    srcPW.close()
+    alignPW.close()
   }
   
   def main(args: Array[String]): Unit = {
     argumentParser.parse(args, Config()) map { config =>
       
       basicTests(config)
+      val storage = config.outputPrefix 
       
       val srcSents   = Preprocessing.prepareTrainingDataForUnknownWords(loadSents(config.sourceFN))
       val alignments = loadSents(config.alignmentFN)
       
-      val trainingData = preprocess(srcSents zip alignments)
+      val trainingData = filtering(srcSents zip alignments)
+      saveData(s"$storage/filteredSents", s"$storage/filteredAlignments", trainingData)
       
-      val storage = config.outputPrefix 
-      val initGrammar = loadOrMakeInitGrammar(config.initIterationFN, trainingData, storage)
+      val initGrammar = loadOrMakeInitGrammar(config.initIterationFN, trainingData, storage, config.threads)
       
       val stoppingCriteria = createStoppingCriterion(config)
       

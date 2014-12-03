@@ -4,7 +4,6 @@ import org.scalatest.FlatSpec
 import org.scalatest.matchers.ShouldMatchers
 import grammar.reordering.representation.Grammar
 import grammar.reordering.EM.InsideOutside
-import grammar.reordering.EM.SplitMerge
 import java.io.PrintWriter
 import grammar.reordering.EM.AlignmentCanonicalParser
 
