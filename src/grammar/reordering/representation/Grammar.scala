@@ -6,10 +6,11 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 
-class Grammar ( rulesArg:List[Rule], // scala.collection.Set[Rule],
+class Grammar ( rulesArg:Traversable[Rule], // scala.collection.Set[Rule],
                 val latentMappings:Map[NonTerm,List[NonTerm]],
                 val voc:IntMapping,
                 val nonTerms:IntMapping,
+                val pruneBelow:Double = 0.0,
                 dummy:Boolean=false) {
 
   val unknown : Word = voc(Grammar.unknownToken)
@@ -34,62 +35,89 @@ class Grammar ( rulesArg:List[Rule], // scala.collection.Set[Rule],
     (nonTerm, p)
   }.toMap
   
-  private lazy val alreadyDefinedROOTinners = rulesArg.filter{ rule =>
-    rule.isInstanceOf[InnerRule] &&
-    rule.lhs == ROOT             &&
-    rule.asInstanceOf[InnerRule].rhs.head == ROOT
-    }.map{_.asInstanceOf[InnerRule].rhs}.toSet
+  // private lazy val alreadyDefinedROOTinners = rulesArg.filter{ rule =>
+  //   rule.isInstanceOf[InnerRule] &&
+  //   rule.lhs == ROOT             &&
+  //   rule.asInstanceOf[InnerRule].rhs.head == ROOT
+  //   }.map{_.asInstanceOf[InnerRule].rhs}.toSet
     
-  private lazy val rootSum = Probability.sum(rulesArg.toList.filter{_.lhs == ROOT}.map{_.prob})
+  // it is always 1, no?
+  // private lazy val rootSum = Probability.sum(rulesArg.toList.filter{_.lhs == ROOT}.map{_.prob})
 
   System.err.println("STARTED innerRules computation")
-  val innerRules:scala.collection.Map[(NonTerm, List[NonTerm]), InnerRule] = computeInnerRules(rulesArg)
+  val innerRules:scala.collection.Map[(NonTerm, List[NonTerm]), InnerRule] = computeInnerRules(rulesArg, pruneBelow)
   System.err.println("DONE innerRules computation")
-  private def computeInnerRules(allRules:Traversable[Rule]) : scala.collection.Map[(NonTerm, List[NonTerm]), InnerRule] = {
+  private def computeInnerRules(allRules:Traversable[Rule], pruneBelow:Double) : scala.collection.Map[(NonTerm, List[NonTerm]), InnerRule] = {
     val selectedInnerRules = scala.collection.mutable.Map[(NonTerm, List[NonTerm]), InnerRule]()
     allRules.foreach{
       case innerRule   @ InnerRule  (lhs, rhs , prob) =>
         if(lhs == ROOT){
-          val rootRule = InnerRule(lhs, rhs, Probability(1-Grammar.GLUEweight)*prob/rootSum)
-          if(rhs.head != ROOT && ! alreadyDefinedROOTinners.contains(rhs)){
-            assert(rhs.size == 1)
-            val glueRhs = List(ROOT, rhs.head)
-            val glueRule = InnerRule(ROOT, glueRhs, Probability(Grammar.GLUEweight)*prob/rootSum)// Probability(Double.MinPositiveValue))
-            selectedInnerRules += (ROOT, glueRhs) -> glueRule
-            selectedInnerRules += (lhs, rhs ) -> rootRule
-          }else{
-            selectedInnerRules += (lhs, rhs) -> rootRule
-          }
+          // val rootRule = InnerRule(lhs, rhs, Probability(1-Grammar.GLUEweight)*prob)
+          val rootRule = InnerRule(lhs, rhs, prob)
+          selectedInnerRules += (lhs, rhs ) -> rootRule
         }else{
-          selectedInnerRules += (lhs, rhs ) -> innerRule
+          if(prob.toDouble >= pruneBelow){
+            selectedInnerRules += (lhs, rhs ) -> innerRule
+          }
         }
       case _ =>
     }
+    var glueCount = 0
+    for(nt <- nonTerms.allInts){
+      if( ! nonTerms(nt).contains("*")){ // don't make glue rules for fake unarys
+        if(! selectedInnerRules.contains((ROOT, List(ROOT, nt)))){
+          glueCount += 1
+        }
+        if(! selectedInnerRules.contains((ROOT, List(nt)))){
+          glueCount += 1
+        }
+      }
+    }
+    // val glueProb = Probability(Grammar.GLUEweight/glueCount)
+    val glueProb = Probability(Grammar.GLUEweight)
+    for(nt <- nonTerms.allInts){
+      if( ! nonTerms(nt).contains("*")){ // don't make glue rules for fake unarys
+        if(! selectedInnerRules.contains((ROOT, List(ROOT, nt)))){
+          val glueRule = InnerRule(ROOT, List(ROOT, nt), glueProb)
+          selectedInnerRules += (ROOT, List(ROOT, nt)) -> glueRule
+        }
+        if(! selectedInnerRules.contains((ROOT, List(nt)))){
+          val glueRule = InnerRule(ROOT, List(nt), glueProb)
+          selectedInnerRules += (ROOT, List(nt)) -> glueRule
+        }
+      }
+    }
+    System.err.println("INNER RULES SELECTED "+selectedInnerRules.size)
     selectedInnerRules
   }
     
   System.err.println("STARTED pretermRules computation")
-  val pretermRules:scala.collection.Map[(NonTerm, Word), PretermRule] = computePretermRules(rulesArg)
+  val pretermRules:scala.collection.Map[(NonTerm, Word), PretermRule] = computePretermRules(rulesArg, pruneBelow)
   System.err.println("DONE pretermRules computation")
-  private def computePretermRules(allRules:Traversable[Rule]) : scala.collection.Map[(NonTerm, Word), PretermRule] = {
+  private def computePretermRules(allRules:Traversable[Rule], pruneBelow:Double) : scala.collection.Map[(NonTerm, Word), PretermRule] = {
     val selectedPretermRules = scala.collection.mutable.Map[(NonTerm, Word), PretermRule]()
 
     allRules.foreach{
-      case pretermRule @ PretermRule(lhs, word, _) => selectedPretermRules += (lhs, word) -> pretermRule
+      case pretermRule @ PretermRule(lhs, word, prob) =>
+        if(prob.toDouble >= pruneBelow){
+          selectedPretermRules += (lhs, word) -> pretermRule
+        }
       case _ => 
     }
+    
+    System.err.println("PRETERM RULES SELECTED "+selectedPretermRules.size)
 
     selectedPretermRules
   }
   
   lazy val allRules:Traversable[Rule] = innerRules.valuesIterator.toTraversable ++ pretermRules.valuesIterator.toTraversable
   
-  def getInnerRule(lhs:NonTerm, rhs:List[NonTerm]) : Rule = {
+  def getInnerRule(lhs:NonTerm, rhs:List[NonTerm]) : Option[Rule] = {
     if(dummy){
-      InnerRule(lhs, rhs, Probability(0.1))
+      Some(InnerRule(lhs, rhs, Probability(0.1)))
     }else{
       val representation = (lhs, rhs)
-      innerRules(representation)
+      innerRules.get(representation)
     }
   }
   
@@ -130,59 +158,93 @@ class Grammar ( rulesArg:List[Rule], // scala.collection.Set[Rule],
     selectedInnerRules
   }
   
-  private lazy val optimizedLatentInnerRulesQuery:scala.collection.Map[List[NonTerm], List[Rule]] = computeOptimizedLatentInnerRulesQuery(innerRules.values)
-  private def computeOptimizedLatentInnerRulesQuery(allRules : Traversable[InnerRule]) : scala.collection.Map[List[NonTerm], List[Rule]] = {
-    System.err.println("STARTED optimizing latent InnerRules")
-    val t1 = System.currentTimeMillis()
-    val selectedInnerRules = scala.collection.mutable.Map[List[NonTerm], List[Rule]]().withDefaultValue(List())
-    allRules.foreach{ case rule @ InnerRule(lhs, rhs, prob) =>
-      val representation = (lhs::rhs).map{reverseLatentMappings(_)}
-      selectedInnerRules += representation -> (rule :: selectedInnerRules(representation))
-    }
-    val t2 = System.currentTimeMillis()
-    val period = t2 - t1
-    System.err.println(s"DONE optimizing latent InnerRules in $period ms")
-    selectedInnerRules
-  }
+  // private lazy val optimizedLatentInnerRulesQuery:scala.collection.Map[List[NonTerm], List[Rule]] = computeOptimizedLatentInnerRulesQuery(innerRules.values)
+  // private def computeOptimizedLatentInnerRulesQuery(allRules : Traversable[InnerRule]) : scala.collection.Map[List[NonTerm], List[Rule]] = {
+  //   System.err.println("STARTED optimizing latent InnerRules")
+  //   val t1 = System.currentTimeMillis()
+  //   val selectedInnerRules = scala.collection.mutable.Map[List[NonTerm], List[Rule]]().withDefaultValue(List())
+  //   allRules.foreach{ case rule @ InnerRule(lhs, rhs, prob) =>
+  //     val representation = (lhs::rhs).map{reverseLatentMappings(_)}
+  //     selectedInnerRules += representation -> (rule :: selectedInnerRules(representation))
+  //   }
+  //   val t2 = System.currentTimeMillis()
+  //   val period = t2 - t1
+  //   System.err.println(s"DONE optimizing latent InnerRules in $period ms")
+  //   selectedInnerRules
+  // }
     
-  private lazy val optimizedLatentPretermRulesQuery:scala.collection.Map[(NonTerm, Word), List[Rule]] = computeOptimizedLatentPretermRulesQuery(pretermRules.values)
-  private def computeOptimizedLatentPretermRulesQuery(allRules:Traversable[PretermRule]) : scala.collection.Map[(NonTerm, Word), List[Rule]] = {
-    System.err.println("STARTED optimizing latent PretermRules")
-    val t1 = System.currentTimeMillis()
-    val selectedPretermRules = scala.collection.mutable.Map[(NonTerm, Word), List[Rule]]().withDefaultValue(List())
-    allRules.foreach{ case rule @ PretermRule(lhs, word, prob) =>
-      val representation = (reverseLatentMappings(lhs), word)
-      selectedPretermRules += representation -> (rule :: selectedPretermRules(representation))
-    }
-    val t2 = System.currentTimeMillis()
-    val period = t2 - t1
-    System.err.println(s"DONE optimizing latent PretermRules in $period ms")
-    selectedPretermRules
-  }
+  // private lazy val optimizedLatentPretermRulesQuery:scala.collection.Map[(NonTerm, Word), List[Rule]] = computeOptimizedLatentPretermRulesQuery(pretermRules.values)
+  // private def computeOptimizedLatentPretermRulesQuery(allRules:Traversable[PretermRule]) : scala.collection.Map[(NonTerm, Word), List[Rule]] = {
+  //   System.err.println("STARTED optimizing latent PretermRules")
+  //   val t1 = System.currentTimeMillis()
+  //   val selectedPretermRules = scala.collection.mutable.Map[(NonTerm, Word), List[Rule]]().withDefaultValue(List())
+  //   allRules.foreach{ case rule @ PretermRule(lhs, word, prob) =>
+  //     val representation = (reverseLatentMappings(lhs), word)
+  //     selectedPretermRules += representation -> (rule :: selectedPretermRules(representation))
+  //   }
+  //   val t2 = System.currentTimeMillis()
+  //   val period = t2 - t1
+  //   System.err.println(s"DONE optimizing latent PretermRules in $period ms")
+  //   selectedPretermRules
+  // }
     
-  def getPretermRule(lhs:NonTerm, word:Word) : Rule = {
+  def getPretermRule(lhs:NonTerm, word:Word, prob:Double=0.1) : Rule = {
     if(dummy){
-      PretermRule(lhs, word, Probability(0.1))
+      PretermRule(lhs, word, Probability(prob))
     }else{
       val representation = (lhs, word)
       pretermRules(representation)
     }
   }
   
-  def getAllLatentInnerRules(lhsOriginal:NonTerm, rhsOriginal:List[NonTerm]) : List[Rule] = {
-    if(dummy){
-      List(InnerRule(lhsOriginal, rhsOriginal, Probability(0.1)))
-    }else{
-      optimizedLatentInnerRulesQuery(lhsOriginal::rhsOriginal)
-    }
-  }
+  // def getAllLatentInnerRules(lhsOriginal:NonTerm, rhsOriginal:List[NonTerm]) : List[Rule] = {
+  //   if(dummy){
+  //     List(InnerRule(lhsOriginal, rhsOriginal, Probability(0.1)))
+  //   }else{
+  //     optimizedLatentInnerRulesQuery(lhsOriginal::rhsOriginal)
+  //   }
+  // }
   
-  def getAllLatentPretermRules(lhsOriginal:NonTerm, word:Word) : List[Rule] = {
-    if(dummy){
-      List(PretermRule(lhsOriginal, word, Probability(0.1)))
-    }else{
-      optimizedLatentPretermRulesQuery((lhsOriginal,word))
+  // def getAllLatentPretermRules(lhsOriginal:NonTerm, word:Word) : List[Rule] = {
+  //   if(dummy){
+  //     List(PretermRule(lhsOriginal, word, Probability(0.1)))
+  //   }else{
+  //     optimizedLatentPretermRulesQuery((lhsOriginal,word))
+  //   }
+  // }
+  
+  def saveInBitParFormat(fnLexOut:String, fnGrammarOut:String) : Unit = {
+    val precisionConstant = 100000000
+
+    val lexPW = new PrintWriter(fnLexOut)
+    pretermRules.values.groupBy(_.word).foreach{ case (word, rules) =>
+      val wordStr = voc(word)
+      val rulesStr = rules.flatMap{ case PretermRule(lhs, _, prob) =>
+        val fakeCount = (prob.toDouble*precisionConstant).toInt
+        if(fakeCount != 0){
+          List(nonTerms(lhs)+" "+fakeCount)
+        }else{
+          List()
+        }
+      }.mkString("\t")
+      lexPW.println(wordStr+"\t"+rulesStr)
     }
+    lexPW.close()
+
+    val grPW  = new PrintWriter(fnGrammarOut)
+    innerRules.values.flatMap{ case InnerRule(lhs, rhs, prob) =>
+      val fakeCount = (prob.toDouble*precisionConstant).toInt
+      if(fakeCount != 0){
+        val rhsStr = rhs.map{nt => nonTerms(nt)}.mkString(" ")
+        val line = fakeCount+" "+nonTerms(lhs)+" "+rhsStr
+        List((fakeCount, line))
+      }else{
+        List()
+      }
+    }.toList.sortBy(-_._1).foreach{ case (_, line) =>
+      grPW.println(line)
+    }
+    grPW.close()
   }
   
   def save(fnOut:String) : Unit = {
@@ -237,7 +299,7 @@ object Grammar{
   val unknownToken = "XXX_UNKNOWN_XXX"
   val ROOTtoken = "ROOT"
     
-  val GLUEweight = 0.00001
+  val GLUEweight = 0.000000001
   
   def allCombinations[A](input:List[List[A]]) : List[List[A]] = {
     if(input.size == 1)
@@ -246,7 +308,7 @@ object Grammar{
       allCombinations(input.tail).flatMap{sequel => input.head.map{_::sequel}}
   }
   
-  def loadFromFile(fn:String) : Grammar = {
+  def loadFromFile(fn:String, grammarPruning:Double = 0.0) : Grammar = {
     val splitRx       = """^SPLIT \|\|\| (.+) \|\|\| (.+)""".r
     val pretermRuleRx = """^RULE \|\|\| (.*) -> '(.*)' \|\|\| (.*)""".r
     val generalRuleRx = """^RULE \|\|\| (.*) -> (.*) \|\|\| (.*)""".r
@@ -268,7 +330,7 @@ object Grammar{
         rulesArg ::= InnerRule(nonTerms(lhsStr), rhsStr.split(" +").toList.map{nonTerms(_)}, Probability(prob.toDouble))
     }
     
-    new Grammar(rulesArg, latentMappings, voc, nonTerms)
+    new Grammar(rulesArg, latentMappings, voc, nonTerms, grammarPruning)
   }
   
 }

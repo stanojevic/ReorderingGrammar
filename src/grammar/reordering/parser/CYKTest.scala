@@ -3,9 +3,11 @@ package grammar.reordering.parser
 import org.scalatest.FlatSpec
 import org.scalatest.matchers.ShouldMatchers
 import grammar.reordering.representation.Grammar
+import grammar.reordering.representation.POSseq
 import grammar.reordering.EM.InsideOutside
 import java.io.PrintWriter
 import grammar.reordering.EM.GrammarSplitter
+import grammar.reordering.alignment.Preprocessing
 
 class CYKTest extends FlatSpec with ShouldMatchers{
 
@@ -22,17 +24,25 @@ class CYKTest extends FlatSpec with ShouldMatchers{
         "1-1 2-0 3-2 4-0",
         "1-3 2-0 3-3 4-1"
         )
+    val tags = sents.map{ sent =>
+      val words = sent.split(" +").toList
+      words.map{word =>
+        val tag = "tag_"+word
+        Map(tag -> 1.0)
+      } // stupid trivial tag
+    }
+      
+    val trainingData = (sents, alignments, tags).zipped.asInstanceOf[List[(String, String, POSseq)]]
+    
     val batchSize = 1
     val threads = 2
     val lambda = 0.1
     val flattenInChart = true
     
-    val gInit = InsideOutside.initialIteration(sents zip alignments)
+    val gInit = InsideOutside.initialIteration(trainingData)
 
     var g:Grammar = GrammarSplitter.split(gInit, threads)
     
-    val trainingData = (sents zip alignments)
-
     for(i <- 1 to 10){
       val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads)
       g = InsideOutside.maximization(g, expectedCounts)
@@ -67,16 +77,24 @@ class CYKTest extends FlatSpec with ShouldMatchers{
         "1-1 2-0 3-2 4-0",
         "1-3 2-0 3-3 4-1"
         )
+    val tags = sents.map{ sent =>
+      val words = sent.split(" +").toList
+      words.map{word =>
+        val tag = "tag_"+word
+        Map(tag -> 1.0)
+      } // stupid trivial tag
+    }
+      
+    val trainingData = Preprocessing.zip3(sents, alignments, tags)
+
     val batchSize = 1
     val threads = 2
     val lambda = 0.1
     val flattenInChart = true
     
-    val gInit = InsideOutside.initialIteration(sents zip alignments)
+    val gInit = InsideOutside.initialIteration(trainingData)
     var g:Grammar = GrammarSplitter.split(gInit, threads)
     
-    val trainingData = (sents zip alignments)
-
     for(i <- 1 to 10){
       val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads)
       g = InsideOutside.maximization(g, expectedCounts)

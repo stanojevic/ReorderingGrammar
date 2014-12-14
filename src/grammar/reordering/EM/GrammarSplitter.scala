@@ -12,35 +12,29 @@ import scala.collection.parallel.ForkJoinTaskSupport
 
 object GrammarSplitter {
   
-  val defaultCategorySplitsConfigurationUnmarked : Map[String, Int] = computeDefaultCategorySplitsConfiguration(false)
-  val defaultCategorySplitsConfigurationMarked : Map[String, Int] = computeDefaultCategorySplitsConfiguration(true)
+  val defaultCategorySplitsConfiguration : Map[String, Int] = computeDefaultCategorySplitsConfiguration(10, 1)
   
-  def computeDefaultCategorySplitsConfiguration(markChildOrder:Boolean) : Map[String, Int] = {
-    var latentLimit = Map[String, Int]()
+  def computeDefaultCategorySplitsConfiguration(binarySplits:Int, nArySplits:Int) : Map[String, Int] = {
+    var latentLimit = Map[String, Int]().withDefaultValue(1)
     latentLimit += "ROOT" -> 1
     
-    val motherSizesToEncode = if(markChildOrder) List(2, 4, 5) else List(2)
+    val arity1nonTerms = Set("A", "N")
+    val arity2nonTerms = Set("P01", "P10", "P12", "P21")
+    val arity4nonTerms = Set("P2413", "P3142")
+    val arity5nonTerms = Set("P24153", "P25314", "P42513", "P41352", "P35142", "P31524")
   
-    for(motherSize <- motherSizesToEncode){
-      for(mothersChild <- 1 to motherSize){
-        for(perm <- List("A", "N", "P01", "P10", "P12", "P21", "P2413", "P3142", "P24153", "P25314", "P42513", "P41352", "P35142", "P31524")){
-          val motherSizeDesc   = if(markChildOrder) motherSize   else 0
-          val mothersChildDesc = if(markChildOrder) mothersChild else 0
-          if(motherSize>2){
-            // How many nonterms that cause combinatorial explosion?
-            val nt = "M"+motherSizeDesc+"C"+mothersChildDesc+perm
-            latentLimit += nt -> 1
-          }else{
-            if(perm == "A" || perm == "N"){
-              // How many POS tags?
-              val nt = "M"+motherSizeDesc+"C"+0+perm
-              latentLimit += nt -> 15
-            }else{
-              // How many nonterms that are binary?
-              val nt = "M"+motherSizeDesc+"C"+0+perm
-              latentLimit += nt -> 15
-            }
-          }
+    for(perm <- arity1nonTerms ++ arity2nonTerms ++ arity4nonTerms ++ arity5nonTerms){
+      val arity = if(perm.size == 1) 1 else perm.size-1
+      if(arity1nonTerms.contains(perm)){
+        // How many POS tags?
+        val nt = perm
+        latentLimit += nt -> 3
+      }else{
+        val nt = perm
+        val splitNumber:Int = if(arity == 2) binarySplits else nArySplits
+        latentLimit += nt -> splitNumber
+        for(i <- 1 to arity){
+          latentLimit += s"$nt*$i" -> splitNumber
         }
       }
     }
@@ -48,11 +42,10 @@ object GrammarSplitter {
     latentLimit
   }
 
-
   def split(
       oldG:Grammar,
       threads:Int,
-      categorySplits:Map[String, Int]=defaultCategorySplitsConfigurationUnmarked
+      categorySplits:Map[String, Int]=defaultCategorySplitsConfiguration
       ) : Grammar = {
     
     val oldVoc = oldG.voc
@@ -62,7 +55,125 @@ object GrammarSplitter {
     val newNonTerms = new IntMapping()
 
     var newLatentMappings = Map[NonTerm, List[NonTerm]]()
-    for((motherNonTermString, splits) <- categorySplits){
+    for(motherNonTermString <- oldNonTerms.allStrings){
+      val splits = categorySplits(motherNonTermString)
+      if(splits == 1){
+        newLatentMappings += newNonTerms(motherNonTermString) -> List(newNonTerms(motherNonTermString))
+      }else{
+        newLatentMappings += newNonTerms(motherNonTermString) -> (0 until splits).map{ i => newNonTerms(motherNonTermString+"_"+i) }.toList
+      }
+    }
+    
+    var processed = 0
+    val oldGsize = oldG.allRules.size
+    var newGsize = 0
+    
+    var newRules = List[Rule]()
+    
+    oldG.allRules.foreach{
+      case oldRule @ InnerRule(oldLhs, oldRhss, oldProb) =>
+
+        val oldLhsStr = oldNonTerms(oldLhs)
+        val numOfLhsSplits = categorySplits(oldLhsStr)
+        val newLhssStr = if(numOfLhsSplits == 1){
+          List(oldLhsStr)
+        }else{
+          (0 until numOfLhsSplits).map{ i => oldLhsStr+"_"+i}
+        }
+        val lhsOptions = newLhssStr.map{newNonTerms(_)}
+
+        val arity = oldRhss.size
+        if(arity == 1){
+          val oldRhs = oldRhss.head
+          val oldRhsStr = oldNonTerms(oldRhs)
+          val numOfRhsSplits = categorySplits(oldRhsStr)
+          val newRhssStr = if(numOfRhsSplits == 1){
+            List(oldRhsStr)
+          }else{
+            (0 until numOfRhsSplits).map{ i => oldRhsStr+"_"+i}
+          }
+          val rhsOptions = newRhssStr.map{newNonTerms(_)}
+          val combinationsSize = lhsOptions.size * rhsOptions.size
+          for(lhs <- lhsOptions){
+            for(rhs <- rhsOptions){
+              var randomness = if(combinationsSize == 1) 0.0 else Random.nextDouble()/100 - 0.005
+              while(oldProb.toDouble + randomness > 1.0 || oldProb.toDouble + randomness < 0.0){
+                randomness = Random.nextDouble()/100 - 0.005
+              }
+              val newProb = Probability(oldProb.toDouble + randomness)
+              val newRule = InnerRule(lhs, List(rhs), newProb)
+              newRules ::= newRule
+            }
+          }
+        }else if(oldLhsStr == Grammar.ROOTtoken){
+          // arity > 1
+          // && we don't want to split glue rules
+          // i know how the rule looks like
+          val combinationsSize = lhsOptions.size
+          for(lhs <- lhsOptions){
+            val lhsStr = newNonTerms(lhs)
+            val parts = lhsStr.split("_")
+            val newRhssStr = if(parts.size > 1){
+              (1 to arity).map{ i => parts(0)+"*"+i+"_"+parts(1) }
+            }else{
+              (1 to arity).map{ i => parts(0)+"*"+i }
+            }
+            var randomness = if(combinationsSize == 1) 0.0 else Random.nextDouble()/100 - 0.005
+            while(oldProb.toDouble + randomness > 1.0 || oldProb.toDouble + randomness < 0.0){
+              randomness = Random.nextDouble()/100 - 0.005
+            }
+            val newProb = Probability(oldProb.toDouble + randomness)
+            val newRhss = newRhssStr.map{newNonTerms(_)}.toList
+            val newRule = InnerRule(lhs, newRhss, newProb)
+            newRules ::= newRule
+          }
+        }
+      case PretermRule(oldLhs, oldWord, oldProb) =>
+
+        val oldLhsStr = oldNonTerms(oldLhs)
+        val numOfLhsSplits = categorySplits(oldLhsStr)
+        val lhsOptions = if(numOfLhsSplits == 1){
+          List(newNonTerms(oldLhsStr))
+        }else{
+          (0 until numOfLhsSplits).map{ i => newNonTerms(oldLhsStr+"_"+i)}
+        }
+
+        val combinationsSize = lhsOptions.size
+        for(lhs <- lhsOptions){
+          var randomness = if(combinationsSize == 1) 0.0 else Random.nextDouble()/100 - 0.005
+          while(oldProb.toDouble + randomness > 1.0 || oldProb.toDouble + randomness < 0.0){
+            randomness = Random.nextDouble()/100 - 0.005
+          }
+          val newProb = Probability(oldProb.toDouble + randomness)
+          val newRule = PretermRule(lhs, oldWord, newProb)
+          newRules ::= newRule
+        }
+    }
+    
+    System.err.println("finished initial split operation")
+    
+    val newG = new Grammar(normalize(newRules, threads), newLatentMappings, oldVoc, newNonTerms)
+    System.err.println("grammar is created")
+    newG
+  }
+    
+
+  def split_old(
+      oldG:Grammar,
+      threads:Int,
+      categorySplits:Map[String, Int]=defaultCategorySplitsConfiguration
+      ) : Grammar = {
+    
+    val oldVoc = oldG.voc
+    val oldNonTerms = oldG.nonTerms
+    val oldLatentMappings = oldG.latentMappings
+    
+    val newNonTerms = new IntMapping()
+
+    var newLatentMappings = Map[NonTerm, List[NonTerm]]()
+    for(motherNonTermString <- oldNonTerms.allStrings){
+      val splits = categorySplits(motherNonTermString)
+    // for((motherNonTermString, splits) <- categorySplits){
       if(splits == 1){
         newLatentMappings += newNonTerms(motherNonTermString) -> List(newNonTerms(motherNonTermString))
       }else{
@@ -92,16 +203,19 @@ object GrammarSplitter {
         val combinations = Grammar.allCombinations(representations)
         val combinationsSize = combinations.size // to speed it up a bit
         
-        val result = combinations.map{ case lhs::rhs =>
-          var randomness = if(combinationsSize == 1) 0.0 else Random.nextDouble()/100 - 0.005
-          while(oldProb.toDouble + randomness > 1.0 || oldProb.toDouble + randomness < 0.0){
-            randomness = Random.nextDouble()/100 - 0.005
-          }
-          InnerRule(lhs, rhs, Probability(oldProb.toDouble + randomness))
+        val result = combinations.map{
+          case lhs::rhs =>
+            var randomness = if(combinationsSize == 1) 0.0 else Random.nextDouble()/100 - 0.005
+            while(oldProb.toDouble + randomness > 1.0 || oldProb.toDouble + randomness < 0.0){
+              randomness = Random.nextDouble()/100 - 0.005
+            }
+            InnerRule(lhs, rhs, Probability(oldProb.toDouble + randomness))
+          case _ =>
+            throw new Exception("apocalipse")
         }
         processed += 1
         newGsize += result.size
-        if(processed % 10 == 0){
+        if(processed % 10000 == 0){
           System.err.println(processed+"/"+oldGsize+" newGsize="+newGsize)
         }
         result

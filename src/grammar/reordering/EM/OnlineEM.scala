@@ -2,6 +2,7 @@ package grammar.reordering.EM
 
 import grammar.reordering.representation.Grammar
 import grammar.reordering.representation.Rule
+import grammar.reordering.representation.POSseq
 import grammar.reordering.representation.Chart
 import grammar.reordering.representation.Probability
 import grammar.reordering.representation.Probability.{LogOne, LogNil}
@@ -11,14 +12,17 @@ import grammar.reordering.representation.InnerRule
 import grammar.reordering.representation.PretermRule
 import java.text.SimpleDateFormat
 import java.util.Date
+import grammar.reordering.alignment.AlignmentCanonicalParser
+import grammar.reordering.alignment.AlignmentForestParserWithTags
 
 object OnlineEM {
   
   def runTraining(
                  stoppingCriteria : (Probability, Probability, Int) => Boolean,
                  output : String,
-                 trainingData:List[(String, String)],
+                 trainingData:List[(String, String, POSseq)],
                  initG:Grammar,
+                 firstIterNum:Int,
                  threads:Int,
                  threadBatchSize:Int,
                  onlineBatchSize:Int,
@@ -26,13 +30,13 @@ object OnlineEM {
                     ) : Unit = {
     var initCounts = Map[Rule, Double]()
     for(rule <- initG.allRules){
-      initCounts += rule -> 1.0
+      initCounts += rule -> 1000.0
     }
     var currentCounts = initCounts
     
     var prevLikelihood = LogNil
     var currentLikelihood = LogNil // unimporant initialization
-    var it = 0
+    var it = firstIterNum
     var currentG = initG
 
     val wordCount:Double = trainingData.map{_._1.split(" +").size}.sum
@@ -60,7 +64,7 @@ object OnlineEM {
   }
   
   private def iteration(
-                 trainingData : List[(String, String)],
+                 trainingData : List[(String, String, POSseq)],
                  initG:Grammar,
                  threads:Int,
                  threadBatchSize:Int,
@@ -78,9 +82,10 @@ object OnlineEM {
     var rollingDenominator = 1.0
     var currentG = initG
     var totalProb = LogOne
+    val trainingDataSize = trainingData.size
     
     trainingData.grouped(onlineBatchSize).foreach{ trainingBatch =>
-      System.err.println(s"START expectations")
+      System.err.println(s"START mini expectations")
       val t1 = System.currentTimeMillis()
       val nks = (k until k+onlineBatchSize).map{ k => Math.pow(k+2, -alphaRate)}.toList
 
@@ -98,49 +103,42 @@ object OnlineEM {
                             (trainingBatch zip scalingFactors).grouped(threadBatchSize).toList
                           }
       val manyScaledExpectations:List[(Probability, Map[Rule, Double])] = preparedBatch.map{ miniBatch =>
-        miniBatch.map{ case ((sent, alignment), scalingFactor) =>
+        val result = miniBatch.map{ case ((sent, alignment, pos), scalingFactor) =>
           val a = AlignmentCanonicalParser.extractAlignment(alignment)
           val s = sent.split(" +").toList
           
-          val chart:Chart = AlignmentForestParser.parse(s, a, currentG)
+          val alignmentParser =  new AlignmentForestParserWithTags(g=currentG)
+          val chart:Chart = alignmentParser.parse(sent=s, a=a, tags=pos)
           InsideOutside.inside(chart, currentG)
           InsideOutside.outside(chart, currentG)
           val chartExpectations = InsideOutside.computeExpectedCountPerChart(chart, currentG).mapValues(_*scalingFactor)
-          for(count <- chartExpectations.values){
-            if(count.isNaN){
-              print("nan")
-            }
-          }
           
           val n = chart.size
           val sentProb:Probability = chart(0)(n-1).get(currentG.ROOT).inside
           
           processed +=1
-          if(processed % 10 == 0){
-            System.err.println(processed)
+          if(processed % 1000 == 0){
+            System.err.println(s"$processed/$trainingDataSize")
           }
           
           (sentProb, chartExpectations)
         }.toList
+        result
       }.toList.flatten
       
       for(scaledExpectations <- manyScaledExpectations){
         totalProb *= scaledExpectations._1
         for((rule, count) <- scaledExpectations._2){
-          if(count.isNaN){
-            print("nan")
-          }
           counts(rule)+=count
         }
       }
       val t2 = System.currentTimeMillis()
       val period = t2 - t1
-      System.err.println(s"DONE expectations, took $period ms")
+      System.err.println(s"DONE mini expectations with "+trainingBatch.size+", took "+period+" ms")
       
       val newG = InsideOutside.maximization(currentG, counts)
       
       currentG = newG
-
         
       k += onlineBatchSize
     }

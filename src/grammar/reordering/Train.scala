@@ -8,22 +8,27 @@ import grammar.reordering.representation.Probability
 import grammar.reordering.EM.BatchEM
 import grammar.reordering.EM.OnlineEM
 import java.io.File
-import grammar.reordering.EM.Preprocessing
-import grammar.reordering.EM.AlignmentCanonicalParser
+import grammar.reordering.alignment.Preprocessing
+import grammar.reordering.alignment.AlignmentCanonicalParser
 import java.io.PrintWriter
+import grammar.reordering.representation.POSseq
+import grammar.reordering.alignment.PhrasePairExtractor
 
 object Train {
   
   private case class Config(
       sourceFN : String = "",
       alignmentFN : String = "",
+      wordClassFile : String = null,
       outputPrefix : String = "",
       threads: Int = 1,
       batchEM: Boolean = true,
+      binarySplits: Int = 10,
+      narySplits  : Int = 1,
       onlineBatchSize : Int = 1000,
       threadBatchSize : Int = 1000,
       onlineAlpha:Double = 0.6,
-      initIterationFN : String = null,
+      initGrammarFN : String = null,
       iterations : Int = 30,
       convergenceThreshold : Double = -1
   )
@@ -40,16 +45,28 @@ object Train {
         c.copy(alignmentFN = x)
       }
       
+      opt[String]('c', "wordClassFile") action { (x, c) =>
+        c.copy(wordClassFile = x)
+      }
+      
       opt[String]('o', "outputPrefix") required() action { (x, c) =>
         c.copy(outputPrefix = x)
+      }
+      
+      opt[String]("binarySplits") required() action { (x, c) =>
+        c.copy(binarySplits = x.toInt)
+      }
+      
+      opt[String]("narySplits") required() action { (x, c) =>
+        c.copy(narySplits = x.toInt)
       }
       
       opt[Int]('t', "threads") action { (x, c) =>
         c.copy(threads = x)
       }
       
-      opt[String]('g', "initIterationFN") action { (x, c) =>
-        c.copy(initIterationFN = x)
+      opt[String]('g', "initGrammarFN") action { (x, c) =>
+        c.copy(initGrammarFN = x)
       }
       
       opt[Int]('b', "threadBatchSize") action { (x, c) =>
@@ -81,24 +98,24 @@ object Train {
 
   
   
-  private def loadOrMakeInitGrammar(
-      initIterationFN:String,
-      trainingData:List[(String, String)],
+  private def makeInitGrammar(
+      trainingData:List[(String, String, POSseq)],
       grammarOutputPrefix:String,
+      binarySplits:Int,
+      narySplits:Int,
       threads:Int ) : Grammar = {
-    if(initIterationFN == null){
-      System.err.println("START creating init grammar")
-      val initG = InsideOutside.initialIteration(trainingData)
-      System.err.println("DONE creating init grammar")
-      System.err.println("START splitting init grammar")
-      val splittedGrammar = GrammarSplitter.split(initG, threads)
-      System.err.println("DONE splitting init grammar")
-      splittedGrammar.save(grammarOutputPrefix+"initGrammar")
-      System.err.println("init grammar is saved")
-      splittedGrammar
-    }else{
-      Grammar.loadFromFile(initIterationFN)
-    }
+    System.err.println("START creating init grammar")
+    val initG = InsideOutside.initialIteration(trainingData)
+    initG.save(grammarOutputPrefix+"nonSplittedGrammar")
+    System.err.println("DONE creating init grammar")
+    System.err.println("START splitting init grammar")
+    System.err.println("splitting binary into $binarySplits")
+    val splittingConfig = GrammarSplitter.computeDefaultCategorySplitsConfiguration(binarySplits, narySplits)
+    val splittedGrammar = GrammarSplitter.split(initG, threads, splittingConfig)
+    System.err.println("DONE splitting init grammar")
+    splittedGrammar.save(grammarOutputPrefix+"initGrammar")
+    System.err.println("init grammar is saved")
+    splittedGrammar
   }
   
   private def createStoppingCriterion(config:Config) : (Probability, Probability, Int) => Boolean = {
@@ -135,10 +152,11 @@ object Train {
   
   private def loadSents(file: String) : List[String] = Source.fromFile(file).getLines().toList
   
-  private def filtering(oldData : List[(String, String)]) : List[(String, String)] = {
+  private def filtering(oldData : List[(String, String, POSseq)]) : List[(String, String, POSseq)] = {
     System.err.println("STARTED filtering")
+    val maxAllowedArity = 5
     var processed = 0
-    val newData = oldData.filter{ case (sent, alignment) =>
+    val newData = oldData.filter{ case (_, alignment, _) =>
       processed += 1
       if(processed % 10000 == 0){
         System.err.println(processed)
@@ -146,7 +164,7 @@ object Train {
       val a = AlignmentCanonicalParser.extractAlignment(alignment)
       val arity = Preprocessing.maxArity(a)
 
-      arity <= 4 && Preprocessing.numAlignedWords(a) >=2
+      arity <= maxAllowedArity && Preprocessing.numAlignedWords(a) >=2
     }
     System.err.println("DONE filtering")
     System.err.println("kept "+newData.size+" out of "+oldData.size)
@@ -154,15 +172,83 @@ object Train {
     newData
   }
   
-  private def saveData(srcFN:String, alignFN:String, data:List[(String, String)]) : Unit = {
+  private def saveData(srcFN:String, alignFN:String, posFN:String, data:List[(String, String, POSseq)]) : Unit = {
     val srcPW = new PrintWriter(srcFN)
     val alignPW = new PrintWriter(alignFN)
-    for((srcSent, alignment) <- data){
+    val posPW = new PrintWriter(posFN)
+    for((srcSent, alignment, pos) <- data){
       srcPW.println(srcSent)
       alignPW.println(alignment)
+      posPW.println(pos.map{_.keys.head})
     }
-    srcPW.close()
+    posPW.close()
     alignPW.close()
+    srcPW.close()
+  }
+  
+  private def wordAsItselfSequence(srcSents:List[String]) : List[POSseq] = {
+    srcSents.map{ sent =>
+      sent.split(" +").map{word => Map(("tag_"+word) -> 1.0)}.toList
+    }
+  }
+
+  private def wordClassSequence(srcSents:List[String], alignments:List[String], wordClassFile:String) : List[POSseq] = {
+    val mapping = scala.collection.mutable.Map[String, Int]()
+    Source.fromFile(wordClassFile).getLines().foreach{ line =>
+      val res = line.split("\t")
+      mapping += res(0) -> res(1).toInt
+    }
+    var posTagged = List[List[scala.collection.Map[String,Double]]]()
+    for((sent, align) <- (srcSents zip alignments)){
+      val words = sent.split(" +").toList
+      val aLinks = AlignmentCanonicalParser.extractAlignment(align)
+      val a = AlignmentCanonicalParser.avgTargetPosition(words.size, aLinks)
+      val posSeq = words.zipWithIndex.map{ case (word, i) =>
+        val initStr = if(a(i) < 0){
+          "tag_N_"
+        }else{
+          "tag_A_"
+        }
+        val pos = if(mapping contains word){
+          initStr+mapping(word)
+        }else{
+          initStr+"no_cluster"
+        }
+        Map(pos -> 1.0)
+      }
+      posTagged ::= posSeq
+    }
+    posTagged.reverse
+  }
+  
+  private def firstIterationNumber(initGrammarFN:String) : Int = {
+    if(initGrammarFN == null || initGrammarFN == ""){
+      0
+    }else{
+      initGrammarFN.split("_").last.toInt+1
+    }
+  }
+  
+  private def mergePhrases(sents:List[String], aligns:List[String]) : (List[String], List[String]) = {
+    var newSents = List[String]()
+    var newAligns = List[String]()
+
+    val sentsCount = sents.size
+    var processed = 0
+    (sents zip aligns).foreach{ case (sent, align) =>
+      val a = AlignmentCanonicalParser.extractAlignment(align)
+      val words = sent.split(" +").toList
+      val n = words.size
+      val spans = PhrasePairExtractor.findPhrases(a, n)
+      val (newWords , newA) = PhrasePairExtractor.fakeAlignmentAndFakeWords(words, spans)
+      newSents ::= newWords.mkString(" ")
+      newAligns ::= newA.map{case (i, j) => s"$i-$j"}.mkString(" ")
+      processed += 1
+      if(processed % 1000 == 0){
+        System.err.println(s"$processed/$sentsCount phrase merging")
+      }
+    }
+    (newSents.reverse, newAligns.reverse)
   }
   
   def main(args: Array[String]): Unit = {
@@ -170,14 +256,48 @@ object Train {
       
       basicTests(config)
       val storage = config.outputPrefix 
+      val rawSentences : List[String] = loadSents(config.sourceFN)
+      val rawAlignments : List[String] = loadSents(config.alignmentFN)
       
-      val srcSents   = Preprocessing.prepareTrainingDataForUnknownWords(loadSents(config.sourceFN))
-      val alignments = loadSents(config.alignmentFN)
+      val (phraseMergedSentences, phraseMergedAlignments) = mergePhrases(rawSentences, rawAlignments)
+
+      var trainingData : List[(String, String, POSseq)] = null
+      var initGrammar  : Grammar = null
+      var firstIterNumber = 0
       
-      val trainingData = filtering(srcSents zip alignments)
-      saveData(s"$storage/filteredSents", s"$storage/filteredAlignments", trainingData)
+      if(config.initGrammarFN == null){
+        // we are not continuing previous training but starting from scrach
+        val srcSents     : List[String] = Preprocessing.prepareTrainingDataForUnknownWords(phraseMergedSentences)
+        
+        val posSequences : List[POSseq] = if(config.wordClassFile != null) {
+          wordClassSequence(phraseMergedSentences, phraseMergedAlignments, config.wordClassFile)
+        }else{
+          wordAsItselfSequence(phraseMergedSentences)
+        }
+
+        trainingData = filtering(Preprocessing.zip3(srcSents, phraseMergedAlignments, posSequences))
+        firstIterNumber = 0
+
+        initGrammar = makeInitGrammar(trainingData, storage, config.binarySplits, config.narySplits, config.threads)
+      }else{
+        initGrammar = Grammar.loadFromFile(config.initGrammarFN)
+        firstIterNumber = firstIterationNumber(config.initGrammarFN)
+        
+        System.err.println("filtering by grammar; RETHINK this if you are training on different data now")
+        val srcSents     : List[String] = Preprocessing.prepareDataForUnknownWordsGivenGrammar(phraseMergedSentences, initGrammar)
+
+        val posSequences : List[POSseq] = if(config.wordClassFile != null) {
+          wordClassSequence(phraseMergedSentences, phraseMergedAlignments, config.wordClassFile)
+        }else{
+          wordAsItselfSequence(phraseMergedSentences)
+        }
+        
+        trainingData = filtering(Preprocessing.zip3(srcSents, phraseMergedAlignments, posSequences))
+      }
       
-      val initGrammar = loadOrMakeInitGrammar(config.initIterationFN, trainingData, storage, config.threads)
+      saveData(s"$storage/filteredSents", s"$storage/filteredAlignments", s"$storage/filteredPos", trainingData)
+      
+      System.err.println(s"FIRST ITER NUMBER IS $firstIterNumber")
       
       val stoppingCriteria = createStoppingCriterion(config)
       
@@ -189,6 +309,7 @@ object Train {
             storage,
             trainingData,
             initGrammar,
+            firstIterNumber,
             config.threads,
             config.threadBatchSize)
         System.err.println("DONE Batch EM training")
@@ -200,6 +321,7 @@ object Train {
             storage,
             trainingData,
             initGrammar,
+            firstIterNumber,
             config.threads,
             config.threadBatchSize,
             config.onlineBatchSize)

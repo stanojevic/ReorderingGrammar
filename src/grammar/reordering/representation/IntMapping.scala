@@ -12,6 +12,10 @@ class IntMapping {
     locked = true
   }
   
+  def unlock():Unit = {
+    locked = false
+  }
+  
   override
   def toString() : String = {
     voc.toString

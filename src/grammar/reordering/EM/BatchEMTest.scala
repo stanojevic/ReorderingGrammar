@@ -3,8 +3,10 @@ package grammar.reordering.EM
 import org.scalatest.FlatSpec
 import org.scalatest.matchers.ShouldMatchers
 import grammar.reordering.representation.Grammar
+import grammar.reordering.representation.POSseq
 import grammar.reordering.representation.Probability
 import grammar.reordering.representation.Probability.{LogNil, LogOne}
+import grammar.reordering.alignment.Preprocessing
 
 class BatchEMTest extends FlatSpec with ShouldMatchers {
 
@@ -17,6 +19,13 @@ class BatchEMTest extends FlatSpec with ShouldMatchers {
         // "Nekakva koja nema recenica mnogo smisla"//,
         //"nema mnogo recenica koja Nekakva smisla"
         )
+    val tags = sents.map{ sent =>
+      val words = sent.split(" +").toList
+      words.map{word =>
+        val tag = "tag_"+word
+        Map(tag -> 1.0)
+      } // stupid trivial tag
+    }
     val alignments = List(
         "1-1 2-0 3-0 4-0",
         "1-1 2-0 3-1 4-0",
@@ -26,8 +35,8 @@ class BatchEMTest extends FlatSpec with ShouldMatchers {
 
     val miniBatchSize = 2
     val threads = 3
-    
-    val gInit = InsideOutside.initialIteration(sents zip alignments)
+    val trainingData = Preprocessing.zip3(sents, alignments, tags)
+    val gInit = InsideOutside.initialIteration(trainingData)
     val gSplit = GrammarSplitter.split(gInit, threads)
     
     var iteration = 1
@@ -47,9 +56,7 @@ class BatchEMTest extends FlatSpec with ShouldMatchers {
     val stoppingCriteria : (Probability, Probability, Int) => Boolean = iterationNumberStopper(_, _, _, 30)
     val grammarStorageDir = "batch_EM_grammars"
       
-    val trainingData = (sents zip alignments)
-    
-    BatchEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, threads, miniBatchSize)
+    BatchEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize)
   }
 
 }

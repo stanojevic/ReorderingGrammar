@@ -75,9 +75,6 @@ object NBestExtractor {
           for((edge, nonTermSpan) <- edgeAndNTStoProcess){
             val lhs = edge.rule.lhs
             val operator = g.permutationMappings(lhs)
-            if(edge.rule.isInstanceOf[PretermRule]){
-              println("dios mio")
-            }
             val rule = edge.rule.asInstanceOf[InnerRule]
             val a = rule.rhs.size
             val spans = edge.children
@@ -89,8 +86,6 @@ object NBestExtractor {
 
             val initVec = Array.fill(a)(0).toList
             val children:List[WeightedTreeNode] = (0 until a).map{ childOrder =>
-              if(candidates(childOrder).size == 0)
-                println("oh my")
               candidates(childOrder)(0)
               }.toList
             val firstNode = constructNode(i, j, operator, rule.prob, children, initVec)
@@ -124,7 +119,11 @@ object NBestExtractor {
       }
     }
     
-    bestChart(0)(n-1).get(g.ROOT).toList
+    if(bestChart(0)(n-1).contains(g.ROOT)){
+      bestChart(0)(n-1).get(g.ROOT).toList
+    }else{
+      List()
+    }
   }
   
   @tailrec

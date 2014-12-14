@@ -3,8 +3,10 @@ package grammar.reordering.EM
 import org.scalatest.FlatSpec
 import org.scalatest.matchers.ShouldMatchers
 import grammar.reordering.representation.Grammar
+import grammar.reordering.representation.POSseq
 import grammar.reordering.representation.Probability
 import grammar.reordering.representation.Probability.{LogNil, LogOne}
+import grammar.reordering.alignment.Preprocessing
 
 class OnlineEMTest extends FlatSpec with ShouldMatchers{
 
@@ -23,12 +25,21 @@ class OnlineEMTest extends FlatSpec with ShouldMatchers{
         "1-1 2-0 3-2 4-0",
         "1-3 2-0 3-3 4-1"
         )
+    val tags = sents.map{ sent =>
+      val words = sent.split(" +").toList
+      words.map{word =>
+        val tag = "tag_"+word
+        Map(tag -> 1.0)
+      } // stupid trivial tag
+    }
+      
+    val trainingData = Preprocessing.zip3(sents, alignments, tags)
 
     val m = 2
     val miniBatchSize = 2
     val threads = 3
     
-    val gInit = InsideOutside.initialIteration(sents zip alignments)
+    val gInit = InsideOutside.initialIteration(trainingData)
     val gSplit = GrammarSplitter.split(gInit, threads)
     
     var iteration = 1
@@ -47,10 +58,8 @@ class OnlineEMTest extends FlatSpec with ShouldMatchers{
     
     val stoppingCriteria : (Probability, Probability, Int) => Boolean = iterationNumberStopper(_, _, _, 30)
     val grammarStorageDir = "online_EM_grammars"
-      
-    val trainingData = (sents zip alignments)
-    
-    OnlineEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, threads, miniBatchSize, m)
+
+    OnlineEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize, m)
   }
 
 }

@@ -31,7 +31,6 @@ object CYK {
     
     /// preterminal stuff ///
     for(i <- 0 to n-1){
-      println(s"preterminal $i")
       val wordStr = sent(i)
       val word:Word = if(g.voc.allStrings contains wordStr) g.voc(wordStr) else g.unknown
       
@@ -100,7 +99,6 @@ object CYK {
 
         ////// step 1.1 completing ALMOST complete edges in real chart /////
         for(split <- i+1 to j){
-          println(s"inner $i to $j split $split for full chart")
           for(DotEdge(List(rhsLast), rule @ InnerRule(lhs, rhs, p), splits, insideSoFar) <- dotChartAlmost(i)(split-1)){
             if(chart(split)(j) contains rhsLast){
               /// rule is complete
@@ -154,7 +152,6 @@ object CYK {
         
         ////// step 1.6 completing FAR from complete dot rules ////
         for(split <- i+1 to j){
-          println(s"inner $i to $j split $split for dot chart")
           for(DotEdge(incompleteStack, rule @ InnerRule(lhs, rhs, p), splits, insideSoFar) <- dotChartFar(i)(split-1)){
             if(chart(split)(j) contains incompleteStack.head){
               val newInsideSoFar = insideSoFar*chart(split)(j).get(incompleteStack.head).inside
@@ -214,8 +211,11 @@ object CYK {
         val nonTermSpan = it.value()
         
         for(edge <- nonTermSpan.edges){
-          val word = edge.rule .asInstanceOf[PretermRule].word
-          rs((nonLatentLhs, word)) = rs((nonLatentLhs, word)) + nonTermSpan.outside * edge.inside
+          edge.rule match{
+            case PretermRule(_, word, _) =>
+              rs((nonLatentLhs, word)) = rs((nonLatentLhs, word)) + nonTermSpan.outside * edge.inside
+            case _ =>
+          }
         }
       }
       
@@ -278,7 +278,6 @@ object CYK {
     for(span <- 3 to n){
       for(i <- 0 until n-span+1){
         val j = i + span - 1
-        println(s"rebalancing $i $j")
         val ntsIt = chart(i)(j).iterator()
         
         while(ntsIt.hasNext()){

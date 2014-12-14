@@ -1,9 +1,10 @@
-package grammar.reordering.EM
+package grammar.reordering.alignment
 
 import org.scalatest.FlatSpec
 import org.scalatest.matchers.ShouldMatchers
 import beer.permutation.pet.representation.NonTerm
 import beer.permutation.pet.representation.Term
+import grammar.reordering.alignment.AlignmentCanonicalParser
 
 class AlignmentParserTest extends FlatSpec with ShouldMatchers{
 

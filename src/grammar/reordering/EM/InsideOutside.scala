@@ -4,6 +4,8 @@ import grammar.reordering.representation._
 import grammar.reordering.representation.Probability.{LogNil, LogOne, sum, product}
 import java.io.PrintWriter
 import scala.collection.parallel.ForkJoinTaskSupport
+import grammar.reordering.alignment.AlignmentCanonicalParser
+import grammar.reordering.alignment.AlignmentForestParserWithTags
 
 object InsideOutside {
   
@@ -34,15 +36,35 @@ object InsideOutside {
     for(i <- 0 until n){
       val it = chart(i)(i).iterator()
       
+      // processing PretermRules
       while(it.hasNext()){
         it.advance()
         val nonTermSpan = it.value()
-        nonTermSpan.inside = sum(nonTermSpan.edges.map{_.rule.prob}.toList)
         nonTermSpan.edges.foreach{ edge =>
-          edge.inside = edge.rule.prob
+          if(edge.rule.isInstanceOf[PretermRule]){
+            edge.inside = edge.rule.prob
+          }else{
+            edge.inside = LogNil // just for the moment
+          }
         }
+        nonTermSpan.inside =
+          sum(nonTermSpan.edges.map{_.inside}.toList)
       }
       
+      //processing unary InnerRules
+      val itUnary = chart(i)(i).iterator()
+      while(itUnary.hasNext()){
+        itUnary.advance()
+        val nonTermSpan = itUnary.value()
+        nonTermSpan.edges.foreach{ edge =>
+          if(edge.rule.isInstanceOf[InnerRule]){
+            val rhs = edge.rule.asInstanceOf[InnerRule].rhs.head
+            edge.inside = edge.rule.prob * chart(i)(i).get(rhs).inside
+          }
+        }
+        nonTermSpan.inside =
+          sum(nonTermSpan.edges.map{_.inside}.toList)
+      }
     }
     
     for(span <- 2 to n){
@@ -63,7 +85,8 @@ object InsideOutside {
           for(edge <- edgesToProcess){
             edge.inside = edge.rule.prob * 
                              product(edge.children.map{ case (start:Int, end:Int, childNonTerm:NonTerm) =>
-                               chart(start)(end).get(childNonTerm).inside
+                               val nonTermSpan = chart(start)(end).get(childNonTerm)
+                               nonTermSpan.inside
                              })
           }
   
@@ -122,10 +145,26 @@ object InsideOutside {
         }
       }
     }
+    
+    for(i <- 0 until n){
+      val it = chart(i)(i).iterator()
+      while(it.hasNext()){
+        it.advance()
+        val nonTermSpan = it.value()
+        for(edge <- nonTermSpan.edges){
+          edge.rule match {
+            case InnerRule(lhs, List(rhs), p) =>
+              val childNTS = chart(i)(i).get(rhs)
+              childNTS.outside += nonTermSpan.outside * edge.inside / childNTS.inside
+            case PretermRule(_, _, _) =>
+          }
+        }
+      }
+    }
   }
   
   def expectation(
-                 trainingData:List[(String, String)],
+                 trainingData:List[(String, String, POSseq)],
                  g:Grammar,
                  batchSize:Int,
                  threads:Int
@@ -140,35 +179,50 @@ object InsideOutside {
                             trainingData.grouped(batchSize).toList
                           }
     var processed = 0
+    val veryBeginingTime = System.currentTimeMillis()
     var startTime = System.currentTimeMillis()
     val totalSentsToProcess = trainingData.size
 
     val (
         expectedCounts:Map[Rule, Double],
-        allSplitLikelihood:Probability) = trainingBatches.map{ miniBatch:List[(String, String)] =>
-      miniBatch.map{ case (sent, alignment) =>
+        allSplitLikelihood:Probability) = trainingBatches.map{ miniBatch:List[(String, String, POSseq)] =>
+      miniBatch.map{ case (sent, alignment, posSequence) =>
 
         val a = AlignmentCanonicalParser.extractAlignment(alignment)
         val s = sent.split(" +").toList
+        
+        val alignmentParser = new AlignmentForestParserWithTags(g=g)
   
-        val chart:Chart = AlignmentForestParser.parse(s, a, g)
+        val chart:Chart = alignmentParser.parse(sent=s, a=a, tags=posSequence)
 
         this.inside(chart, g)
 
         this.outside(chart, g)
 
         val chartExpectations:Map[Rule, Double] = this.computeExpectedCountPerChart(chart, g)
-
+        
         val n = chart.size
         val sentProb:Probability = chart(0)(n-1).get(g.ROOT).inside
 
-        processed += 1
-        if(processed % 10000 == 0){
+        if(processed % 10 == 0 && processed != 0){
+          System.err.print(".")
+        }
+        if(processed % 1000 == 0){
           var newTime = System.currentTimeMillis()
-          var period = newTime - startTime
-          System.err.println(s"$processed/$totalSentsToProcess ; last chunk processed for $period ms")
+          var period = (newTime - startTime) / 1000
+          System.err.println()
+          System.err.print(s"$processed/$totalSentsToProcess | last chunk processed for $period s\t")
+          val pastMins = (newTime-veryBeginingTime)/60000
+          if(processed != 0 && pastMins != 0){
+            val futureMins:Int = (totalSentsToProcess-processed).toInt/(processed/pastMins).toInt
+            val partialFutureHours = futureMins/60
+            val partialFutureMins = futureMins%60
+            System.err.print(s"| time left $partialFutureHours h $partialFutureMins m\t")
+          }
+          System.err.println()
           startTime = newTime
         }
+        processed += 1
 
         (chartExpectations, sentProb)
       }.reduce( (a,b) => sumExpectations(a, b) )
@@ -184,11 +238,24 @@ object InsideOutside {
     val normalizations = scala.collection.mutable.Map[NonTerm, Double]().withDefaultValue(0.0)
 
     for((rule, counts) <- expectedCounts){
-      normalizations(rule.lhs) = normalizations(rule.lhs) + counts
+      if(!counts.isNaN() && !counts.isInfinite()){
+        normalizations(rule.lhs) = normalizations(rule.lhs) + counts
+      }else{
+        System.err.println(s"wtf $counts")
+      }
     }
     
     for((rule, counts) <- expectedCounts){
-      val newProb = Probability(counts/normalizations(rule.lhs))
+      val newProb = if(counts == 0.0){
+        LogNil
+      } else {
+        val normalizer = normalizations(rule.lhs)
+        val p = counts/normalizer
+        if(p.isNaN() || p.isInfinite()){
+          println(s"problem $counts divided by $normalizer")
+        }
+        Probability(p)
+      }
       rule match {
         case InnerRule(lhs, rhs, _) =>
           newRules ::= InnerRule(lhs, rhs, newProb)
@@ -227,22 +294,32 @@ object InsideOutside {
    * MUST NOT be parallelized because it contains mutable vocabulary (and maybe some other things)
    * anyway this phase is really fast so again NO NEED for parallelization
    */
-  def initialIteration( trainingData:List[(String, String)]) : Grammar = {
+  def initialIteration( trainingData:List[(String, String, POSseq)]) : Grammar = {
+    val posTags = scala.collection.mutable.Set[String]()
+    for((_, _, poss) <- trainingData){
+      for(positionPoss <- poss){
+        for((pos, _) <- positionPoss){
+          posTags += pos
+        }
+      }
+    }
     val voc = new IntMapping()
     var allRuleCounts = scala.collection.mutable.Map[Rule, Double]().withDefaultValue(0.0)
+    val nonTerms = AlignmentForestParserWithTags.createNonTermsMappingWithTags(posTags.toList)
     val g = new Grammar(
         rulesArg = List(),
-        latentMappings = AlignmentForestParser.defaultLatentMappingsUnmarked,
-        nonTerms = AlignmentForestParser.defaultNonTermsUnmarked,
+        latentMappings = AlignmentForestParserWithTags.createDummyLatentMappings(nonTerms),
+        nonTerms = nonTerms,
         voc = voc,
         dummy=true
         )
     var processed = 0
-    trainingData.foreach{ case (sent, alignment) =>
+    trainingData.foreach{ case (sent, alignment, posSequence) =>
       val a = AlignmentCanonicalParser.extractAlignment(alignment)
       val s = sent.split(" +").toList
       s.foreach(voc(_))
-      val chart:Chart = AlignmentForestParser.parse(s, a, g)
+      val alignmentParser = new AlignmentForestParserWithTags(g=g)
+      val chart:Chart = alignmentParser.parse(sent=s, a=a, tags=posSequence)
       for((rule, count) <- this.extractRuleCounts(chart)){
         allRuleCounts(rule) = allRuleCounts(rule)+count
       }
@@ -261,8 +338,8 @@ object InsideOutside {
 
     val newGrammar = new Grammar(
         rulesArg = newRules,
-        latentMappings = AlignmentForestParser.defaultLatentMappingsUnmarked,
-        nonTerms = AlignmentForestParser.defaultNonTermsUnmarked,
+        latentMappings = g.latentMappings,
+        nonTerms = g.nonTerms,
         voc = voc
         )
     
@@ -286,14 +363,27 @@ object InsideOutside {
           it.advance()
           val nonTermSpan = it.value()
           for(edge <- nonTermSpan.edges){
-            ruleCountAcc(edge.rule) += nonTermSpan.outside * edge.inside
+            val expect = nonTermSpan.outside * edge.inside
+            if( ! expect.toDouble.isNaN && ! expect.toDouble.isInfinite()){
+              ruleCountAcc(edge.rule) += expect
+            }else{
+              System.err.println(edge.toString(g.voc, g.nonTerms))
+              System.err.println()
+            }
           }
         }
       }
     }
 
     ruleCountAcc.toMap.mapValues{count:Probability =>
-      count.toDouble/sentProb.toDouble
+      if(count.toDouble == 0.0){
+        0.0
+      }else if(count.toDouble.isNaN || count.toDouble.isInfinite()){
+        System.err.println("ah")
+        0.0
+      }else{
+        count.toDouble/sentProb.toDouble
+      }
     }.withDefaultValue(0.0)
   }
   

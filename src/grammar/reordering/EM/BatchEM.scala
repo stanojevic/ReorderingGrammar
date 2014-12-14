@@ -4,17 +4,20 @@ import grammar.reordering.representation.Probability
 import grammar.reordering.representation.Probability.{LogNil}
 import grammar.reordering.representation.Grammar
 import grammar.reordering.representation.Rule
+import grammar.reordering.representation.POSseq
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
+import grammar.reordering.alignment.PhrasePairExtractor
 
 object BatchEM {
 
   def runTraining(
                  stoppingCriteria : (Probability, Probability, Int) => Boolean,
                  output : String,
-                 trainingData:List[(String, String)],
+                 trainingData:List[(String, String, POSseq)],
                  initG:Grammar,
+                 firstIterNum:Int,
                  threads:Int,
                  threadBatchSize:Int
                     ) : Unit = {
@@ -26,7 +29,7 @@ object BatchEM {
     
     var prevLikelihood = LogNil
     var currentLikelihood = LogNil // unimporant initialization
-    var it = 0
+    var it = firstIterNum
     var currentG = initG
     
     val wordCount:Double = trainingData.map{_._1.split(" +").size}.sum
@@ -42,6 +45,8 @@ object BatchEM {
       currentLikelihood = result._2
       
       currentG.save(output+"/grammar_"+it)
+      val dePhrasedGrammar = PhrasePairExtractor.unfoldGrammarOfIdioms(currentG)
+      dePhrasedGrammar.save(output+"/grammar_"+it+".dephrased")
       val perplexityPerWord = Math.exp(-currentLikelihood.log/wordCount)
       System.err.println()
       System.err.println(s"Grammar $it: likelihood $currentLikelihood")
@@ -53,7 +58,7 @@ object BatchEM {
   }
 
   private def iteration(
-                 trainingData:List[(String, String)],
+                 trainingData:List[(String, String, POSseq)],
                  g:Grammar,
                  batchSize:Int,
                  threads:Int

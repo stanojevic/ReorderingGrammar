@@ -1,4 +1,4 @@
-package grammar.reordering.EM
+package grammar.reordering.alignment
 
 import beer.permutation.pet.representation.TreeNode
 import beer.permutation.pet.representation.NonTerm

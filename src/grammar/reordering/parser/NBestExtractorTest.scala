@@ -5,7 +5,7 @@ import org.scalatest.matchers.ShouldMatchers
 import grammar.reordering.representation.Grammar
 import grammar.reordering.EM.InsideOutside
 import java.io.PrintWriter
-import grammar.reordering.EM.AlignmentCanonicalParser
+import grammar.reordering.alignment.AlignmentCanonicalParser
 
 class NBestExtractorTest extends FlatSpec with ShouldMatchers{
 
@@ -68,10 +68,12 @@ class NBestExtractorTest extends FlatSpec with ShouldMatchers{
     
     val quasiPerm = Yield.treeToPermutation(result.head._1)
     val betterPerm = Yield.filterOutUnaligned(quasiPerm)
-    val newStr = Yield.permuteString(quasiPerm, sent)
+    val yieldOfTree = Yield.yieldTree(result.head._1, sent)
+    val yieldOfTreeWithUnaligned = Yield.yieldTreeWithUnaligned(result.head._1, sent)
     println(s"quasiPerm = $quasiPerm")
     println(s"betterPerm = $betterPerm")
-    println(s"newStr = $newStr")
+    println(s"yieldOfTree = $yieldOfTree")
+    println(s"yieldOfTreeWithUnaligned = $yieldOfTreeWithUnaligned")
 
     System.in.read()
     println("extracted "+result.size+" trees and requested "+k)

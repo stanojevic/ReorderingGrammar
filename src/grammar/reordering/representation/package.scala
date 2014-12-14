@@ -4,7 +4,7 @@ import gnu.trove.map.hash.TIntObjectHashMap
 import grammar.reordering.representation.Probability.LogNil
 
 package object representation {
-  
+  type POSseq  = List[scala.collection.Map[String,Double]]
   type NonTerm = Int
   type Word    = Int
   
@@ -158,6 +158,26 @@ package object representation {
      * @return chart with root node on coordinates (0,n-1)
      */
     def emptyChart(n:Int) : Chart = Array.fill(n, n)(new TIntObjectHashMap[NonTermSpan]())
+    
+    def chartToString(chart:Chart, g:Grammar) : String = {
+      var result = ""
+      result += "Start printing chart\n"
+      val n = chart.size
+      for(span <- 1 to n){
+        for(i <- 0 until n-span+1){
+          val j = i + span -1
+          result += s"[$i $j]\n"
+          for(lhs <- chart(i)(j).keys){
+            result += "\t{"+g.nonTerms(lhs)+s"} has "+chart(i)(j).get(lhs).edges.size+" edges\n"
+            result += chart(i)(j).get(lhs).edges.map{ edge =>
+              "\t\t"+edge.toString(g.voc, g.nonTerms)+"\n"
+            }.toList.sorted.mkString("")
+          }
+        }
+      }
+      result+="End printing chart\n"
+      result
+    }
     
     def copyChart(oldChart:Chart) : Chart = {
       val n = oldChart.size
