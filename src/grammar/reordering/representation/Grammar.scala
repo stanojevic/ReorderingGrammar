@@ -35,6 +35,35 @@ class Grammar ( rulesArg:Traversable[Rule], // scala.collection.Set[Rule],
     (nonTerm, p)
   }.toMap
   
+  
+  private def isPhraseRule(rule:Rule) : Boolean = {
+    rule match {
+      case PretermRule(_, _, _) =>
+        false
+      case InnerRule(lhs, rhs, _) =>
+        val lhsStr = nonTerms(lhs)
+        lhsStr.startsWith("tag_") && (rhs.size > 1)
+    }
+  }
+  
+  lazy val phraseRules:scala.collection.Map[String, InnerRule] = computePhraseRules(rulesArg, pruneBelow)
+  private def computePhraseRules(allRules:Traversable[Rule], pruneBelow:Double) : scala.collection.Map[String, InnerRule] = {
+    System.err.println("STARTED phraseRules computation")
+    val selectedPhraseRules = scala.collection.mutable.Map[String, InnerRule]()
+    allRules.foreach{
+      case rule @ InnerRule(lhs, rhs, prob) if isPhraseRule(rule) =>
+        if(prob.toDouble >= pruneBelow){
+          val phrase = rhs.map{nonTerms(_).replaceAllLiterally("STAR", "*").drop(4)}.mkString(" ")
+          selectedPhraseRules += phrase -> rule
+        }
+      case _ =>
+    }
+    System.err.println("PHRASE RULES SELECTED "+selectedPhraseRules.size)
+    System.err.println("DONE phraseRules computation")
+    selectedPhraseRules
+  }
+  
+
   // private lazy val alreadyDefinedROOTinners = rulesArg.filter{ rule =>
   //   rule.isInstanceOf[InnerRule] &&
   //   rule.lhs == ROOT             &&
@@ -44,10 +73,9 @@ class Grammar ( rulesArg:Traversable[Rule], // scala.collection.Set[Rule],
   // it is always 1, no?
   // private lazy val rootSum = Probability.sum(rulesArg.toList.filter{_.lhs == ROOT}.map{_.prob})
 
-  System.err.println("STARTED innerRules computation")
   val innerRules:scala.collection.Map[(NonTerm, List[NonTerm]), InnerRule] = computeInnerRules(rulesArg, pruneBelow)
-  System.err.println("DONE innerRules computation")
   private def computeInnerRules(allRules:Traversable[Rule], pruneBelow:Double) : scala.collection.Map[(NonTerm, List[NonTerm]), InnerRule] = {
+    System.err.println("STARTED innerRules computation")
     val selectedInnerRules = scala.collection.mutable.Map[(NonTerm, List[NonTerm]), InnerRule]()
     allRules.foreach{
       case innerRule   @ InnerRule  (lhs, rhs , prob) =>
@@ -55,46 +83,48 @@ class Grammar ( rulesArg:Traversable[Rule], // scala.collection.Set[Rule],
           // val rootRule = InnerRule(lhs, rhs, Probability(1-Grammar.GLUEweight)*prob)
           val rootRule = InnerRule(lhs, rhs, prob)
           selectedInnerRules += (lhs, rhs ) -> rootRule
-        }else{
+        }else if(! isPhraseRule(innerRule)){
           if(prob.toDouble >= pruneBelow){
             selectedInnerRules += (lhs, rhs ) -> innerRule
           }
         }
       case _ =>
     }
-    var glueCount = 0
-    for(nt <- nonTerms.allInts){
-      if( ! nonTerms(nt).contains("*")){ // don't make glue rules for fake unarys
-        if(! selectedInnerRules.contains((ROOT, List(ROOT, nt)))){
-          glueCount += 1
-        }
-        if(! selectedInnerRules.contains((ROOT, List(nt)))){
-          glueCount += 1
-        }
-      }
-    }
-    // val glueProb = Probability(Grammar.GLUEweight/glueCount)
-    val glueProb = Probability(Grammar.GLUEweight)
-    for(nt <- nonTerms.allInts){
-      if( ! nonTerms(nt).contains("*")){ // don't make glue rules for fake unarys
-        if(! selectedInnerRules.contains((ROOT, List(ROOT, nt)))){
-          val glueRule = InnerRule(ROOT, List(ROOT, nt), glueProb)
-          selectedInnerRules += (ROOT, List(ROOT, nt)) -> glueRule
-        }
-        if(! selectedInnerRules.contains((ROOT, List(nt)))){
-          val glueRule = InnerRule(ROOT, List(nt), glueProb)
-          selectedInnerRules += (ROOT, List(nt)) -> glueRule
-        }
-      }
-    }
+    // var glueCount = 0
+    // for(nt <- nonTerms.allInts){
+    //   val ntStr = nonTerms(nt)
+    //   if( ! ntStr.contains("*") && ! ntStr.startsWith("tag_[[[") ){ // don't make glue rules for fake unarys
+    //     if(! selectedInnerRules.contains((ROOT, List(ROOT, nt)))){
+    //       glueCount += 1
+    //     }
+    //     if(! selectedInnerRules.contains((ROOT, List(nt)))){
+    //       glueCount += 1
+    //     }
+    //   }
+    // }
+    // val glueProb = Probability(Grammar.GLUEweight)
+    // for(nt <- nonTerms.allInts){
+    //   val ntStr = nonTerms(nt)
+    //   if( ! ntStr.contains("*") && ! ntStr.startsWith("tag_[[[") ){
+    //     // don't make glue rules for fake unarys
+    //     if(! selectedInnerRules.contains((ROOT, List(ROOT, nt)))){
+    //       val glueRule = InnerRule(ROOT, List(ROOT, nt), glueProb)
+    //       selectedInnerRules += (ROOT, List(ROOT, nt)) -> glueRule
+    //     }
+    //     if(! selectedInnerRules.contains((ROOT, List(nt)))){
+    //       val glueRule = InnerRule(ROOT, List(nt), glueProb)
+    //       selectedInnerRules += (ROOT, List(nt)) -> glueRule
+    //     }
+    //   }
+    // }
     System.err.println("INNER RULES SELECTED "+selectedInnerRules.size)
+    System.err.println("DONE innerRules computation")
     selectedInnerRules
   }
     
-  System.err.println("STARTED pretermRules computation")
   val pretermRules:scala.collection.Map[(NonTerm, Word), PretermRule] = computePretermRules(rulesArg, pruneBelow)
-  System.err.println("DONE pretermRules computation")
   private def computePretermRules(allRules:Traversable[Rule], pruneBelow:Double) : scala.collection.Map[(NonTerm, Word), PretermRule] = {
+    System.err.println("STARTED pretermRules computation")
     val selectedPretermRules = scala.collection.mutable.Map[(NonTerm, Word), PretermRule]()
 
     allRules.foreach{
@@ -106,6 +136,7 @@ class Grammar ( rulesArg:Traversable[Rule], // scala.collection.Set[Rule],
     }
     
     System.err.println("PRETERM RULES SELECTED "+selectedPretermRules.size)
+    System.err.println("DONE pretermRules computation")
 
     selectedPretermRules
   }
@@ -319,16 +350,24 @@ object Grammar{
     var latentMappings = Map[NonTerm, List[NonTerm]]()
     var rulesArg = List[Rule]()
     
+    System.err.println("STARTED reading the grammar")
     Source.fromFile(fn).getLines().foreach{
       case splitRx(motherStr, splitsStr) =>
         latentMappings += nonTerms(motherStr) -> splitsStr.split(" +").toList.map{nonTerms(_)}
       case nonTermsRx(nonTermsStr) =>
         nonTermsStr.split(" +").foreach{nonTerms(_)}
       case pretermRuleRx(lhsStr, wordStr, prob) =>
-        rulesArg ::= PretermRule(nonTerms(lhsStr), voc(wordStr), Probability(prob.toDouble))
+        val p = prob.toDouble
+        if(p >= grammarPruning){
+          rulesArg ::= PretermRule(nonTerms(lhsStr), voc(wordStr), Probability(p))
+        }
       case generalRuleRx(lhsStr, rhsStr, prob) =>
-        rulesArg ::= InnerRule(nonTerms(lhsStr), rhsStr.split(" +").toList.map{nonTerms(_)}, Probability(prob.toDouble))
+        val p = prob.toDouble
+        if(p >= grammarPruning){
+          rulesArg ::= InnerRule(nonTerms(lhsStr), rhsStr.split(" +").toList.map{nonTerms(_)}, Probability(p))
+        }
     }
+    System.err.println("DONE reading the grammar")
     
     new Grammar(rulesArg, latentMappings, voc, nonTerms, grammarPruning)
   }

@@ -6,6 +6,8 @@ import java.io.PrintWriter
 import scala.collection.parallel.ForkJoinTaskSupport
 import grammar.reordering.alignment.AlignmentCanonicalParser
 import grammar.reordering.alignment.AlignmentForestParserWithTags
+import grammar.reordering.parser.KBestExtractor
+import scala.util.Random
 
 object InsideOutside {
   
@@ -167,7 +169,9 @@ object InsideOutside {
                  trainingData:List[(String, String, POSseq)],
                  g:Grammar,
                  batchSize:Int,
-                 threads:Int
+                 threads:Int,
+                 randomness:Double,
+                 hardEMtopK:Int
                     ) : (Map[Rule, Double], Probability) = {
     g.voc.lock()
     val trainingBatches = if(threads>1){
@@ -194,15 +198,16 @@ object InsideOutside {
         val alignmentParser = new AlignmentForestParserWithTags(g=g)
   
         val chart:Chart = alignmentParser.parse(sent=s, a=a, tags=posSequence)
-
-        this.inside(chart, g)
-
-        this.outside(chart, g)
-
-        val chartExpectations:Map[Rule, Double] = this.computeExpectedCountPerChart(chart, g)
+        
+        val (chartExpectations, sentProb) = if(hardEMtopK > 0){
+          this.computeHardExpectedCountPerChart(chart, g, randomness, hardEMtopK)
+        }else{
+          this.inside(chart, g)
+          this.outside(chart, g)
+          this.computeSoftExpectedCountPerChart(chart, g, randomness)
+        }
         
         val n = chart.size
-        val sentProb:Probability = chart(0)(n-1).get(g.ROOT).inside
 
         if(processed % 10 == 0 && processed != 0){
           System.err.print(".")
@@ -287,6 +292,7 @@ object InsideOutside {
     }
     // val cExp = (aExp.keySet ++ bExp.keySet).map{key => key -> (aExp.getOrElse(key, 0.0) + bExp.getOrElse(key, 0.0))}.toMap
     val cLikelihood = aLikelihood * bLikelihood
+    System.err.print("+")
     (cExp.toMap, cLikelihood)
   }
   
@@ -348,11 +354,11 @@ object InsideOutside {
     newGrammar
   }
   
-  def computeExpectedCountPerChart(chart:Chart, g:Grammar) : Map[Rule, Double] = {
+  def computeSoftExpectedCountPerChart(chart:Chart, g:Grammar, randomness:Double) : (Map[Rule, Double], Probability) = {
     val n = chart.size
     val sentProb = chart(0)(n-1).get(g.ROOT).inside
     
-    val ruleCountAcc = scala.collection.mutable.Map[Rule, Probability]().withDefaultValue(LogNil)
+    val ruleCountAcc = scala.collection.mutable.Map[Rule, Double]().withDefaultValue(0.0)
     
     for(span <- 1 to n){
       for(i <- 0 until n-span+1){
@@ -363,9 +369,11 @@ object InsideOutside {
           it.advance()
           val nonTermSpan = it.value()
           for(edge <- nonTermSpan.edges){
-            val expect = nonTermSpan.outside * edge.inside
-            if( ! expect.toDouble.isNaN && ! expect.toDouble.isInfinite()){
-              ruleCountAcc(edge.rule) += expect
+            val expectProb = (nonTermSpan.outside * edge.inside)/sentProb
+            val expect = expectProb.toDouble
+            if( ! expect.isNaN && ! expect.isInfinite()){
+              val noize = Random.nextDouble()*expect*randomness/100
+              ruleCountAcc(edge.rule) += expect + noize
             }else{
               System.err.println(edge.toString(g.voc, g.nonTerms))
               System.err.println()
@@ -375,16 +383,25 @@ object InsideOutside {
       }
     }
 
-    ruleCountAcc.toMap.mapValues{count:Probability =>
-      if(count.toDouble == 0.0){
-        0.0
-      }else if(count.toDouble.isNaN || count.toDouble.isInfinite()){
-        System.err.println("ah")
-        0.0
-      }else{
-        count.toDouble/sentProb.toDouble
+    (ruleCountAcc.toMap, sentProb)
+  }
+  
+  def computeHardExpectedCountPerChart(chart:Chart, g:Grammar, randomness:Double, k:Int) : (Map[Rule, Double], Probability) = {
+    val ruleCountAcc = scala.collection.mutable.Map[Rule, Double]().withDefaultValue(0.0)
+    
+    val kBestTrees = KBestExtractor.extractKbest(g, chart, k)
+    
+    var sentProb = sum(kBestTrees.map{_.subTreeP})
+    for(tree <- kBestTrees){
+      val rules = tree.extractRules(g)
+      rules.foreach{ rule =>
+        val partialExpectation:Double = (tree.subTreeP/sentProb).toDouble
+        val noize = Random.nextDouble()*partialExpectation*randomness/100
+        ruleCountAcc(rule) += partialExpectation+noize
       }
-    }.withDefaultValue(0.0)
+    }
+    
+    (ruleCountAcc.toMap, sentProb)
   }
   
 }

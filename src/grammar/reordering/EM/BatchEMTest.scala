@@ -56,7 +56,10 @@ class BatchEMTest extends FlatSpec with ShouldMatchers {
     val stoppingCriteria : (Probability, Probability, Int) => Boolean = iterationNumberStopper(_, _, _, 30)
     val grammarStorageDir = "batch_EM_grammars"
       
-    BatchEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize)
+    val hardEMtopK = 2
+    val randomness = 0.0
+      
+    BatchEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize, randomness, hardEMtopK)
   }
 
 }

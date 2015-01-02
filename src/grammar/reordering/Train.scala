@@ -25,8 +25,10 @@ object Train {
       batchEM: Boolean = true,
       binarySplits: Int = 10,
       narySplits  : Int = 1,
-      onlineBatchSize : Int = 1000,
+      onlineBatchSize : Int = 10000,
       threadBatchSize : Int = 1000,
+      hardEMbestK : Int = 1,
+      randomnessInEstimation : Double = 0.0,
       onlineAlpha:Double = 0.6,
       initGrammarFN : String = null,
       iterations : Int = 30,
@@ -69,6 +71,14 @@ object Train {
         c.copy(initGrammarFN = x)
       }
       
+      opt[Int]("hard_EM_best_K") action { (x, c) =>
+        c.copy(hardEMbestK = x)
+      } text ("How many Kbest for hard EM iterations (first iteration is always soft EM; for <=0 only soft EM will be used always)")
+      
+      opt[Double]("randomnessInEstimation") action { (x, c) =>
+        c.copy(randomnessInEstimation = x)
+      }
+      
       opt[Int]('b', "threadBatchSize") action { (x, c) =>
         c.copy(threadBatchSize = x)
       }
@@ -109,7 +119,8 @@ object Train {
     initG.save(grammarOutputPrefix+"nonSplittedGrammar")
     System.err.println("DONE creating init grammar")
     System.err.println("START splitting init grammar")
-    System.err.println("splitting binary into $binarySplits")
+    System.err.println(s"splitting binary into $binarySplits")
+    System.err.println(s"splitting nary into $narySplits")
     val splittingConfig = GrammarSplitter.computeDefaultCategorySplitsConfiguration(binarySplits, narySplits)
     val splittedGrammar = GrammarSplitter.split(initG, threads, splittingConfig)
     System.err.println("DONE splitting init grammar")
@@ -188,7 +199,10 @@ object Train {
   
   private def wordAsItselfSequence(srcSents:List[String]) : List[POSseq] = {
     srcSents.map{ sent =>
-      sent.split(" +").map{word => Map(("tag_"+word) -> 1.0)}.toList
+      sent.split(" +").map{ word =>
+        val tag = "tag_"+word.replaceAllLiterally("*", "STAR")
+        Map( tag -> 1.0 )
+      }.toList
     }
   }
 
@@ -287,9 +301,9 @@ object Train {
         val srcSents     : List[String] = Preprocessing.prepareDataForUnknownWordsGivenGrammar(phraseMergedSentences, initGrammar)
 
         val posSequences : List[POSseq] = if(config.wordClassFile != null) {
-          wordClassSequence(phraseMergedSentences, phraseMergedAlignments, config.wordClassFile)
+          wordClassSequence(srcSents, phraseMergedAlignments, config.wordClassFile)
         }else{
-          wordAsItselfSequence(phraseMergedSentences)
+          wordAsItselfSequence(srcSents)
         }
         
         trainingData = filtering(Preprocessing.zip3(srcSents, phraseMergedAlignments, posSequences))
@@ -311,7 +325,9 @@ object Train {
             initGrammar,
             firstIterNumber,
             config.threads,
-            config.threadBatchSize)
+            config.threadBatchSize,
+            config.randomnessInEstimation,
+            config.hardEMbestK)
         System.err.println("DONE Batch EM training")
       }else{
         // online EM
@@ -324,7 +340,9 @@ object Train {
             firstIterNumber,
             config.threads,
             config.threadBatchSize,
-            config.onlineBatchSize)
+            config.onlineBatchSize,
+            config.randomnessInEstimation,
+            config.onlineAlpha)
         System.err.println("DONE Online EM training")
       }
       

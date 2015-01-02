@@ -26,7 +26,8 @@ object OnlineEM {
                  threads:Int,
                  threadBatchSize:Int,
                  onlineBatchSize:Int,
-                 alphaRate:Double = 0.6
+                 alphaRate:Double,
+                 randomness:Double
                     ) : Unit = {
     var initCounts = Map[Rule, Double]()
     for(rule <- initG.allRules){
@@ -47,7 +48,7 @@ object OnlineEM {
       System.err.println(s"Iteration $it started at $date")
       System.err.println()
 
-      val result = iteration(trainingData, currentG, threads, threadBatchSize, onlineBatchSize, currentCounts, alphaRate)
+      val result = iteration(trainingData, currentG, threads, threadBatchSize, onlineBatchSize, currentCounts, alphaRate, randomness)
       currentG = result._1
       currentLikelihood = result._2
       currentCounts = result._3
@@ -70,7 +71,8 @@ object OnlineEM {
                  threadBatchSize:Int,
                  onlineBatchSize:Int,
                  initCounts:Map[Rule, Double],
-                 alphaRate:Double // must be between 0.5 (fast and instable) and 1 (slow and stable)
+                 alphaRate:Double, // must be between 0.5 (fast and instable) and 1 (slow and stable)
+                 randomness:Double
                     ) : (Grammar, Probability, Map[Rule, Double]) = {
     
     val counts = scala.collection.mutable.Map[Rule, Double]().withDefaultValue(0.0)
@@ -111,10 +113,12 @@ object OnlineEM {
           val chart:Chart = alignmentParser.parse(sent=s, a=a, tags=pos)
           InsideOutside.inside(chart, currentG)
           InsideOutside.outside(chart, currentG)
-          val chartExpectations = InsideOutside.computeExpectedCountPerChart(chart, currentG).mapValues(_*scalingFactor)
+          
+          val (unscaledExpectations, sentProb) = InsideOutside.computeSoftExpectedCountPerChart(chart, currentG, randomness)
+          val chartExpectations = unscaledExpectations.mapValues(_*scalingFactor)
           
           val n = chart.size
-          val sentProb:Probability = chart(0)(n-1).get(currentG.ROOT).inside
+          // val sentProb:Probability = chart(0)(n-1).get(currentG.ROOT).inside
           
           processed +=1
           if(processed % 1000 == 0){

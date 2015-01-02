@@ -58,8 +58,11 @@ class OnlineEMTest extends FlatSpec with ShouldMatchers{
     
     val stoppingCriteria : (Probability, Probability, Int) => Boolean = iterationNumberStopper(_, _, _, 30)
     val grammarStorageDir = "online_EM_grammars"
+      
+    val randomness = 0.0
+    val alpha = 0.6
 
-    OnlineEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize, m)
+    OnlineEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize, m, randomness, alpha)
   }
 
 }

@@ -43,8 +43,11 @@ class CYKTest extends FlatSpec with ShouldMatchers{
 
     var g:Grammar = GrammarSplitter.split(gInit, threads)
     
+    val randomness = 0.0
+    val kBestHardEM = 0
+    
     for(i <- 1 to 10){
-      val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads)
+      val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, kBestHardEM)
       g = InsideOutside.maximization(g, expectedCounts)
       println(s"iteration $i $likelihood")
     }
@@ -94,9 +97,12 @@ class CYKTest extends FlatSpec with ShouldMatchers{
     
     val gInit = InsideOutside.initialIteration(trainingData)
     var g:Grammar = GrammarSplitter.split(gInit, threads)
+
+    val randomness = 0.0
+    val kBestHardEM = 0
     
     for(i <- 1 to 10){
-      val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads)
+      val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, kBestHardEM)
       g = InsideOutside.maximization(g, expectedCounts)
       println(s"iteration $i $likelihood")
     }

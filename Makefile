@@ -49,7 +49,7 @@ $(LIB): $(SCALA_DIR)
 jar: bin
 	echo "Manifest-Version: 1.0" > Manifest.txt
 	echo Class-Path: `find ./$(LIB) -name \*.jar | tr "\n" " "` >> Manifest.txt
-	echo Main-Class: grammar.reordering.Main >> Manifest.txt
+	echo Main-Class: grammar.reordering.Train >> Manifest.txt
 	rm -f rg_$(RG_VERSION).jar
 	jar -cfm rg_$(RG_VERSION).jar Manifest.txt -C bin .
 	rm Manifest.txt
@@ -58,3 +58,14 @@ bin:
 	mkdir -p bin
 	$(SCALA_COMPILER) -d bin -classpath `find lib -name \*.jar| tr "\n" :` `find src -name \*.scala`
 
+deploy: jar
+#scp -r lib *.jar mstanoj1@laco11.science.uva.nl:/home/mstanoj1/experiments/2015_NAACL/kftt_moses/kftt-moses-1.4
+	scp -r rg_0.1.jar mstanoj1@laco11.science.uva.nl:/home/mstanoj1/experiments/2015_NAACL/kftt_moses/kftt-moses-1.4/rg_0.1.jar
+
+deploy2: jar
+#scp -r lib        mstanoj1@laco10.science.uva.nl:/home/mstanoj1/experiments/en-ja/
+	scp -r rg_0.1.jar mstanoj1@laco10.science.uva.nl:/home/mstanoj1/experiments/en-ja/rg_0.1.jar
+
+deploy3: jar
+#	scp -r lib        mstanoj1@laco10.science.uva.nl:/home/mstanoj1/experiments/en-ja/
+	scp -r rg_0.1.jar mstanoj1@laco10.science.uva.nl:/home/mstanoj1/experiments/en-ja/rg_0.1_2.jar

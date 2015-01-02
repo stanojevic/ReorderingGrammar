@@ -5,11 +5,12 @@ import grammar.reordering.representation.Grammar
 import grammar.reordering.alignment.Preprocessing
 import scala.collection.parallel.ForkJoinTaskSupport
 import grammar.reordering.parser.CYK
-import grammar.reordering.parser.NBestExtractor
+import grammar.reordering.parser.KBestExtractor
 import beer.permutation.pet.representation.TreeNode
 import grammar.reordering.representation.Probability
 import java.io.PrintWriter
 import grammar.reordering.parser.Yield
+import grammar.reordering.parser.SimpleTreeNode
 
 object Parse {
 
@@ -23,7 +24,7 @@ object Parse {
     outTreeFN: String = null,
     outQuasiPermFN: String = null,
     threads: Int = 1,
-    nonParallelBatchSize: Int = 10)
+    flushingSize: Int = 10)
 
   private val argumentParser = new scopt.OptionParser[Config]("ReorderingGrammar") {
 
@@ -65,8 +66,8 @@ object Parse {
       c.copy(threads = x)
     }
 
-    opt[Int]('b', "nonParallelBatchSize") action { (x, c) =>
-      c.copy(nonParallelBatchSize = x)
+    opt[Int]('b', "flushingSize") action { (x, c) =>
+      c.copy(flushingSize = x)
     }
 
     help("help") text ("prints this usage text")
@@ -80,9 +81,9 @@ object Parse {
     Grammar.loadFromFile(grammarFN, grammarPruning)
   }
 
-  private def preprocess(raw: List[String], g: Grammar): List[String] = {
-    Preprocessing.prepareDataForUnknownWordsGivenGrammar(raw, g)
-  }
+  // private def preprocess(raw: List[String], g: Grammar): List[String] = {
+    // Preprocessing.prepareDataForUnknownWordsGivenGrammar(raw, g)
+  // }
 
   def main(args: Array[String]): Unit = {
     argumentParser.parse(args, Config()) map { config =>
@@ -90,9 +91,8 @@ object Parse {
       val lambda = config.lambdaPruning
       val k = config.kBest
 
-      val rawSents = loadSentences(config.sentencesFN)
+      val sents = loadSentences(config.sentencesFN)
       val g = loadGrammar(config.grammarFN, config.grammarPruning)
-      val sents = preprocess(rawSents, g)
 
       val quasiPermPW = if (config.outQuasiPermFN == null) {
         null
@@ -114,21 +114,26 @@ object Parse {
 
       var processed = 0
       val toProcess = sents.size
+      
+      System.err.println("STARTED PARSING")
 
-      sents.zipWithIndex.grouped(config.nonParallelBatchSize).foreach { nonParallelBatch =>
-        val parallelBatch = nonParallelBatch.toStream.par
+      sents.zipWithIndex.grouped(config.flushingSize).foreach { batch =>
+        val parallelBatch = batch.toStream.par
         parallelBatch.tasksupport =
           new ForkJoinTaskSupport(new scala.concurrent.forkjoin.ForkJoinPool(config.threads))
         parallelBatch.map {
           case (sentRaw: String, i: Int) =>
             val sent = sentRaw.split(" +").toList
             val t1 = System.currentTimeMillis()
-            System.err.println("sent of length " + sent.size + " started")
+            System.err.println(s"sent $i of length " + sent.size + " started")
             val chart = CYK.buildChart(g, sent, lambda)
             val delatentizedChart = chart // CYK.deLatentizeChart(g, chart)
-            val result: List[(TreeNode, Probability)] = NBestExtractor.extractKbest(g, delatentizedChart, k)
+            val result: List[SimpleTreeNode] = KBestExtractor.extractKbest(g, delatentizedChart, k)
             if(result.size == 0){
-              System.err.println("FAILED to parse sent of length "+sent.size)
+              System.err.println(s"FAILED to parse sent $i of length "+sent.size)
+            }else{
+              System.err.println(s"SUCCESS to parse sent $i of length "+sent.size)
+              System.err.println(result.head.toPennString(sent))
             }
 
             if (processed % 10 == 0) {
@@ -137,24 +142,25 @@ object Parse {
             processed += 1
             val t2 = System.currentTimeMillis()
             val period = (t2 - t1)/1000
-            System.err.println("sent of length " + sent.size + s" finished in $period s")
+            System.err.println(s"sent $i of length " + sent.size + s" finished in $period s")
             (result, i)
         }.toList.sortBy(_._2).foreach {
           case (trees: List[(TreeNode, Probability)], i: Int) => {
-            val sent = rawSents(i).split(" +").toList
-            trees.zipWithIndex.foreach { case ((tree: TreeNode, weight: Probability), rank: Int) => 
+            val sent = sents(i).split(" +").toList
+            trees.zipWithIndex.foreach { case (tree: SimpleTreeNode, rank: Int) => 
+              val weight = tree.subTreeP
               if (quasiPermPW != null) {
-                val quasiPerm = Yield.treeToPermutation(tree)
+                val quasiPerm = tree.yieldPermutationWithUnaligned()
                 quasiPermPW.print(s"sent $i rank $rank prob $weight ||| ")
                 quasiPermPW.println(quasiPerm)
               }
               if (permutedStringPW != null) {
-                val permutedString = Yield.yieldTree(tree, sent)
+                val permutedString = tree.yieldReorderedWithoutUnaligned(sent)
                 permutedStringPW.print(s"sent $i rank $rank prob $weight ||| ")
                 permutedStringPW.println(permutedString)
               }
               if (treePW != null) {
-                val pennTree = Yield.pennTree(tree, sent)
+                val pennTree = tree.toPennString(sent)
                 treePW.print(s"sent $i rank $rank prob $weight ||| ")
                 treePW.println(pennTree)
               }
@@ -168,6 +174,8 @@ object Parse {
       if (permutedStringPW != null) permutedStringPW.close()
 
       if (treePW != null) treePW.close()
+
+      System.err.println("DONE PARSING")
 
     } getOrElse {
       System.err.println("arguments are bad")

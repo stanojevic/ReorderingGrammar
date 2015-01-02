@@ -3,18 +3,19 @@ package grammar.reordering.parser
 import grammar.reordering.representation.Chart
 import grammar.reordering.representation.Grammar
 import grammar.reordering.representation.ChartHelper
-import grammar.reordering.representation.`package`.PretermRule
-import grammar.reordering.representation.`package`.NonTermSpan
-import grammar.reordering.representation.`package`.NonTerm
-import grammar.reordering.representation.`package`.Word
-import grammar.reordering.representation.`package`.Edge
-import grammar.reordering.representation.`package`.Rule
-import grammar.reordering.representation.`package`.InnerRule
+import grammar.reordering.representation.PretermRule
+import grammar.reordering.representation.NonTermSpan
+import grammar.reordering.representation.NonTerm
+import grammar.reordering.representation.Word
+import grammar.reordering.representation.Edge
+import grammar.reordering.representation.Rule
+import grammar.reordering.representation.InnerRule
 import grammar.reordering.EM.InsideOutside
 import grammar.reordering.representation.Probability
 import grammar.reordering.representation.Probability.{sum, LogNil}
 import java.util.Collections
 import java.util.Arrays
+import grammar.reordering.representation.Edge
 
 object CYK {
 
@@ -96,6 +97,20 @@ object CYK {
         val j = i + span - 1
         
         ////// step 1 /////
+        
+        ////// step 1.0 Adding phrases ///
+        val phraseStr = (i to j).map{sent(_)}.mkString(" ")
+        g.phraseRules.get(phraseStr) match {
+          case Some(phraseRule @ InnerRule(lhs, rhs, prob)) =>
+            val splits = (i+1 to j).toList
+            val newEdge = Edge(i, j, phraseRule, splits)
+            // warning: we don't check for the nodes bellow that
+            // the edge connects to to see if they are pruned
+            // because we don't prune PreTerms atm
+            chart(i)(j).putIfAbsent(lhs, new NonTermSpan())
+            chart(i)(j).get(lhs).addEdge(newEdge)
+          case _ =>
+        }
 
         ////// step 1.1 completing ALMOST complete edges in real chart /////
         for(split <- i+1 to j){
@@ -179,8 +194,45 @@ object CYK {
         }
       }
     }
+    
+    if(! chart(0)(n-1).containsKey(g.ROOT)){
+      glueChart(chart, g)
+    }
 
     chart
+  }
+  
+  private def glueChart(chart: Chart, g:Grammar) : Unit = {
+    val n = chart.size
+    val glueProb = Probability(0.000000000000000000001)
+
+    if(n == 1){
+      val NTs = chart(0)(0).keys
+      chart(0)(0).putIfAbsent(g.ROOT, new NonTermSpan())
+      for(nt <- NTs){
+        val edge = Edge(0, 0, InnerRule(g.ROOT, List(nt), glueProb), List())
+        chart(0)(0).get(g.ROOT).addEdge(edge)
+      }
+    }
+
+    val i = 0
+    for(j <- 1 until n){
+      for(split <- i+1 to j){
+        val leftNTs = chart(i)(split-1).keys().toList.filterNot{ nt =>
+          g.nonTerms(nt) contains "*"
+        }
+        val rightNTs = chart(split)(j).keys().toList.filterNot{ nt =>
+          g.nonTerms(nt) contains "*"
+        }
+        for(leftNT <- leftNTs){
+          for(rightNT <- rightNTs){
+            val edge = Edge(i, j, InnerRule(g.ROOT, List(leftNT, rightNT), glueProb), List(split))
+            chart(i)(j).putIfAbsent(g.ROOT, new NonTermSpan())
+            chart(i)(j).get(g.ROOT).addEdge(edge)
+          }
+        }
+      }
+    }
   }
   
   @inline

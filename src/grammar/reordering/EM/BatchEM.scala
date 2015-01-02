@@ -19,7 +19,9 @@ object BatchEM {
                  initG:Grammar,
                  firstIterNum:Int,
                  threads:Int,
-                 threadBatchSize:Int
+                 threadBatchSize:Int,
+                 randomness:Double,
+                 hardEMtopK:Int
                     ) : Unit = {
     var initCounts = Map[Rule, Double]()
     for(rule <- initG.allRules){
@@ -40,7 +42,11 @@ object BatchEM {
       System.err.println(s"Iteration $it started at $date")
       System.err.println()
 
-      val result = iteration(trainingData, currentG, threadBatchSize, threads)
+      val result = if(it>0){
+        iteration(trainingData, currentG, threadBatchSize, threads, randomness, hardEMtopK)
+      }else{
+        iteration(trainingData, currentG, threadBatchSize, threads, randomness, -1)
+      }
       currentG = result._1
       currentLikelihood = result._2
       
@@ -56,17 +62,19 @@ object BatchEM {
       it += 1
     }while( ! stoppingCriteria(prevLikelihood, currentLikelihood, it))
   }
-
+  
   private def iteration(
                  trainingData:List[(String, String, POSseq)],
                  g:Grammar,
                  batchSize:Int,
-                 threads:Int
+                 threads:Int,
+                 randomness:Double,
+                 hardEMtopK:Int
                     ) : (Grammar, Probability) = {
     System.err.println(s"STARTED expectations")
     val t1 = System.currentTimeMillis()
 
-    val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads)
+    val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, hardEMtopK)
     
     val t2 = System.currentTimeMillis()
     val period = t2 - t1

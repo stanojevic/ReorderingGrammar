@@ -123,11 +123,12 @@ object PhrasePairExtractor {
     val lhsStr:String = nonTerms(rule.lhs)
     if(lhsStr.startsWith(tagMarker+"[[[") && lhsStr.endsWith("]]]") && lhsStr.contains("___")){
       var res = List[Rule]()
-      val words = lhsStr.drop(7).dropRight(3).split("___").toList
+      val words = lhsStr.drop(7).dropRight(3).split("___").toList.map{_.replaceAllLiterally("STAR", "*")}
       var rhsNodes = List[NonTerm]()
       for(word <- words){
         nonTerms.unlock()
-        val ntCode = nonTerms(tagMarker + word)
+        val posTag = tagMarker + word.replaceAllLiterally("*", "STAR")
+        val ntCode = nonTerms(posTag)
         nonTerms.lock() // we have to be careful so it's better to lock it
         rhsNodes ::= ntCode
         voc.unlock()
