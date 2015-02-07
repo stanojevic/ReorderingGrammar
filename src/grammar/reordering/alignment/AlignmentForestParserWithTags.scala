@@ -7,7 +7,14 @@ import beer.permutation.pet.representation.{NonTerm => TreeNonTerm}
 import grammar.reordering.representation._
 import grammar.reordering.representation.Probability.LogOne
 
-class AlignmentForestParserWithTags (g:Grammar, beSafeBecauseOfPruning:Boolean = true){
+class AlignmentForestParserWithTags (
+    g:Grammar,
+    attachLeft:Boolean,
+    attachRight:Boolean,
+    attachTop:Boolean,
+    attachBottom:Boolean,
+    beSafeBecauseOfPruning:Boolean
+    ){
   
   def parse(sent:List[String],
       a:Set[(Int, Int)],
@@ -17,11 +24,21 @@ class AlignmentForestParserWithTags (g:Grammar, beSafeBecauseOfPruning:Boolean =
     
     val chart = ChartHelper.emptyChart(n)
     
-    for(attachSide <- Set(true, false)){
-      for(attachHeight <- Set(true, false)){
-        val tree = AlignmentCanonicalParser.parse(sent.size, a, attachSide, attachHeight)
-        addToChart(chart, tree, sent, tags)
-      }
+    if(attachLeft && attachTop){
+      val tree = AlignmentCanonicalParser.parse(sent.size, a, true, false)
+      addToChart(chart, tree, sent, tags)
+    }
+    if(attachLeft && attachBottom){
+      val tree = AlignmentCanonicalParser.parse(sent.size, a, true, true)
+      addToChart(chart, tree, sent, tags)
+    }
+    if(attachRight && attachTop){
+      val tree = AlignmentCanonicalParser.parse(sent.size, a, false, false)
+      addToChart(chart, tree, sent, tags)
+    }
+    if(attachRight && attachBottom){
+      val tree = AlignmentCanonicalParser.parse(sent.size, a, false, true)
+      addToChart(chart, tree, sent, tags)
     }
     
     addStartSymbols(chart)
@@ -97,22 +114,11 @@ class AlignmentForestParserWithTags (g:Grammar, beSafeBecauseOfPruning:Boolean =
                   latentLhss // it's the same as rhs in this case
                 }
                 
-                // var edges = List[Edge]()
-                
                 val allowedChildrenNTs = List(rhss1, rhss2)
                 for(lhs <- latentLhss){
                   val newEdges = createEdgesForNonUnaryNode(g, spanStart, spanEnd, List(splitPoint), lhs, allowedChildrenNTs)
                   storeEdges(chart, newEdges)
-
-                  // for(rhs1 <- rhss1){
-                  //   for(rhs2 <- rhss2){
-                  //     val newEdge = Edge(spanStart, spanEnd, g.getInnerRule(lhs, List(rhs1, rhs2)), List(splitPoint))
-                  //     edges ::= newEdge
-                  //   }
-                  // }
                 }
-                
-                // storeEdges(chart, edges)
               }
             }
           }
@@ -292,6 +298,7 @@ object AlignmentForestParserWithTags{
     for(tag <- tags){
       outputNonTerm(tag)
     }
+    outputNonTerm("tag_"+Grammar.unknownToken)
     
     outputNonTerm.lock()
     outputNonTerm

@@ -39,7 +39,12 @@ class OnlineEMTest extends FlatSpec with ShouldMatchers{
     val miniBatchSize = 2
     val threads = 3
     
-    val gInit = InsideOutside.initialIteration(trainingData)
+    val attachLeft = true
+    val attachRight = true
+    val attachTop = true
+    val attachBottom = true
+    
+    val gInit = InsideOutside.initialIteration(trainingData, attachLeft, attachRight, attachTop, attachBottom)
     val gSplit = GrammarSplitter.split(gInit, threads)
     
     var iteration = 1
@@ -62,7 +67,7 @@ class OnlineEMTest extends FlatSpec with ShouldMatchers{
     val randomness = 0.0
     val alpha = 0.6
 
-    OnlineEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize, m, randomness, alpha)
+    OnlineEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize, m, randomness, alpha, attachLeft, attachRight, attachTop, attachBottom)
   }
 
 }

@@ -1,7 +1,7 @@
 package grammar.reordering.parser
 
 import grammar.reordering.representation.Probability
-import grammar.reordering.representation.Probability.LogNil
+import grammar.reordering.representation.Probability.{LogNil, LogOne}
 import java.io.PrintWriter
 import java.io.File
 import grammar.reordering.representation.{Rule, InnerRule, PretermRule}
@@ -14,6 +14,11 @@ case class SimpleTreeNode (
     children:List[SimpleTreeNode],
     span:(Int, Int)
     ) {
+  
+  private lazy val hash = (label, children, span).hashCode()
+
+  override
+  def hashCode() = hash
   
   override
   def toString() : String = {
@@ -37,9 +42,9 @@ case class SimpleTreeNode (
     }
   }
   
-  private val UNALIGNED_SHIFT = 10000
-  
-  def yieldPermutationWithUnaligned() : List[Int] = {
+  def yieldPermutationWithUnaligned() : List[Int] = yieldPermutationWithUnaligned_memo
+  private lazy val yieldPermutationWithUnaligned_memo = this.yieldPermutationWithUnaligned_impl()
+  private def yieldPermutationWithUnaligned_impl() : List[Int] = {
     if(span._1 == span._2){
       // terminals
       List(span._1)
@@ -53,7 +58,7 @@ case class SimpleTreeNode (
           if(i<0)
             i
           else
-            i-UNALIGNED_SHIFT
+            i-SimpleTreeNode.UNALIGNED_SHIFT
         }
         val aligned = childrenPerms(1)
         unaligned ++ aligned
@@ -63,7 +68,7 @@ case class SimpleTreeNode (
           if(i<0)
             i
           else
-            i-UNALIGNED_SHIFT
+            i-SimpleTreeNode.UNALIGNED_SHIFT
         }
         aligned ++ unaligned
       }else if(label startsWith "P12"){
@@ -87,7 +92,7 @@ case class SimpleTreeNode (
       sent
     }
 
-    val p = this.yieldPermutationWithUnaligned()
+    val p = this.yieldPermutationWithUnaligned
     p.filter{_>=0}.map{workingSent(_)}
   }
   
@@ -98,22 +103,22 @@ case class SimpleTreeNode (
       sent
     }
 
-    val p = this.yieldPermutationWithUnaligned()
+    val p = this.yieldPermutationWithUnaligned
     p.map{ i =>
       if(i>=0){
         workingSent(i)
       }else{
-        "UNALIGNED_"+workingSent(i+UNALIGNED_SHIFT)+"_UNALIGNED"
+        "UNALIGNED_"+workingSent(i+SimpleTreeNode.UNALIGNED_SHIFT)+"_UNALIGNED"
       }
     }
   }
   
   def toPennString(sent:List[String], depth:Int=0) : String = {
     if(children.size == 0){
-      sent(span._1)
+      SimpleTreeNode.escapeBrackets(sent(span._1))
     }else{
       val childrenString = children.map{_.toPennString(sent, depth+1)}.mkString(" ")
-      "("+label+" "+childrenString+")"
+      "("+SimpleTreeNode.escapeBrackets(label)+" "+childrenString+")"
     }
   }
   
@@ -143,7 +148,7 @@ case class SimpleTreeNode (
       outStr += nodeId+"[label=\""+node.label+"\"; "
       outStr += "fontcolor="+colorMapping(parts(0))+"; style=bold];\n"
       node.children.zipWithIndex.foreach{ case (child, index) =>
-        val childName = nodeId+index
+        val childName = nodeId+"_"+index
         if(child.children.size > 0){
           val res = toDotStringRec(child, childName)
           outStr += res._1
@@ -240,6 +245,48 @@ case class SimpleTreeNode (
     }
     memoizedRules
   }
+  
+  def deuniarize() : SimpleTreeNode = {
+    val newChildren = if(
+        this.children.size>1 &&
+        ! this.label.startsWith("tag_") &&
+        this.children.forall(_.children.size == 1)){
+      this.children.map{child => child.children.head.deuniarize}
+    }else{
+      this.children.map{child => child.deuniarize}
+    }
+    SimpleTreeNode(this.label, this.p, this.subTreeP, newChildren, this.span)
+  }
+  
+  def flatten() : SimpleTreeNode = {
+    if(this.children.isEmpty){
+      this
+    }else{
+      var newChildren = this.children
+      val opLabel = if(this.label.contains("_") && ! this.label.startsWith("tag_")){
+        this.label.substring(0, this.label.indexOf("_"))
+      }else{
+        this.label
+      }
+      if(this.label.contains("P12") || this.label.contains("P21")){
+        while(newChildren.exists{child => child.label.contains(opLabel)}){
+          newChildren = newChildren.flatMap{ child =>
+            if(child.label.contains(opLabel)){
+              child.children
+            }else{
+              List(child)
+            }
+          }
+        }
+      }else if(this.label.startsWith("P")){
+        // some n-ary operator
+        newChildren = newChildren.flatMap{ child => child.children}
+      }
+      newChildren = newChildren.map{_.flatten}
+      
+      SimpleTreeNode(opLabel, this.p, this.subTreeP, newChildren, this.span)
+    }
+  }
 
 }
 
@@ -267,9 +314,9 @@ object SimpleTreeNode {
       children = children.reverse
       
       val node = SimpleTreeNode(
-        label = label,
-        p = LogNil,
-        subTreeP = LogNil,
+        label = unescapeBrackets(label),
+        p = LogOne,
+        subTreeP = LogOne,
         children = children,
         span = (spanStart, children.last.span._2)
       )
@@ -277,9 +324,9 @@ object SimpleTreeNode {
     }else{
       val label = tokens.head
       val node = SimpleTreeNode(
-        label = label,
-        p = LogNil,
-        subTreeP = LogNil,
+        label = unescapeBrackets(label),
+        p = LogOne,
+        subTreeP = LogOne,
         children = List(),
         span = (spanStart, spanStart)
       )
@@ -294,4 +341,16 @@ object SimpleTreeNode {
     tokens.filterNot{_.matches("^\\s*$")}
   }
 
+  private def escapeBrackets(label:String) = {
+    label.replaceAllLiterally("(", "-LRB-").
+          replaceAllLiterally(")", "-RRB-")
+  }
+
+  private def unescapeBrackets(label:String) = {
+    label.replaceAllLiterally("-LRB-", "(").
+          replaceAllLiterally("-RRB-", ")")
+  }
+  
+  val UNALIGNED_SHIFT = 10000
+  
 }

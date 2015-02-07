@@ -9,6 +9,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import grammar.reordering.alignment.PhrasePairExtractor
+import grammar.reordering.alignment.AlignmentForestParserWithTags
 
 object BatchEM {
 
@@ -21,8 +22,12 @@ object BatchEM {
                  threads:Int,
                  threadBatchSize:Int,
                  randomness:Double,
-                 hardEMtopK:Int
-                    ) : Unit = {
+                 hardEMtopK:Int,
+                 attachLeft:Boolean,
+                 attachRight:Boolean,
+                 attachTop:Boolean,
+                 attachBottom:Boolean
+                    ) : Grammar = {
     var initCounts = Map[Rule, Double]()
     for(rule <- initG.allRules){
       initCounts += rule -> 1.0
@@ -43,16 +48,23 @@ object BatchEM {
       System.err.println()
 
       val result = if(it>0){
-        iteration(trainingData, currentG, threadBatchSize, threads, randomness, hardEMtopK)
+        if(hardEMtopK > 0){
+          System.err.println("HARD-EM iteration")
+        }else{
+          System.err.println("SOFT-EM iteration")
+        }
+        iteration(trainingData, currentG, threadBatchSize, threads, randomness, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom)
       }else{
-        iteration(trainingData, currentG, threadBatchSize, threads, randomness, -1)
+        System.err.println("SOFT-EM iteration")
+        iteration(trainingData, currentG, threadBatchSize, threads, randomness, -1, attachLeft, attachRight, attachTop, attachBottom)
       }
       currentG = result._1
       currentLikelihood = result._2
       
-      currentG.save(output+"/grammar_"+it)
-      val dePhrasedGrammar = PhrasePairExtractor.unfoldGrammarOfIdioms(currentG)
-      dePhrasedGrammar.save(output+"/grammar_"+it+".dephrased")
+      currentG.save(output+"/grammar_"+it, dephrased=false)
+      // val dePhrasedGrammar = PhrasePairExtractor.unfoldGrammarOfIdioms(currentG)
+      // dePhrasedGrammar.save(output+"/grammar_"+it+".dephrased")
+      currentG.save(output+"/grammar_"+it+".dephrased", dephrased=true)
       val perplexityPerWord = Math.exp(-currentLikelihood.log/wordCount)
       System.err.println()
       System.err.println(s"Grammar $it: likelihood $currentLikelihood")
@@ -61,6 +73,8 @@ object BatchEM {
       
       it += 1
     }while( ! stoppingCriteria(prevLikelihood, currentLikelihood, it))
+      
+    currentG
   }
   
   private def iteration(
@@ -69,12 +83,16 @@ object BatchEM {
                  batchSize:Int,
                  threads:Int,
                  randomness:Double,
-                 hardEMtopK:Int
+                 hardEMtopK:Int,
+                 attachLeft:Boolean,
+                 attachRight:Boolean,
+                 attachTop:Boolean,
+                 attachBottom:Boolean
                     ) : (Grammar, Probability) = {
     System.err.println(s"STARTED expectations")
     val t1 = System.currentTimeMillis()
-
-    val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, hardEMtopK)
+    
+    val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom)
     
     val t2 = System.currentTimeMillis()
     val period = t2 - t1

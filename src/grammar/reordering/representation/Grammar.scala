@@ -14,6 +14,7 @@ class Grammar ( rulesArg:Traversable[Rule], // scala.collection.Set[Rule],
                 dummy:Boolean=false) {
 
   val unknown : Word = voc(Grammar.unknownToken)
+  val unknownTag : Word = nonTerms("tag_"+Grammar.unknownToken)
   val ROOT : NonTerm = nonTerms(Grammar.ROOTtoken)
   
   if(! dummy){
@@ -142,6 +143,26 @@ class Grammar ( rulesArg:Traversable[Rule], // scala.collection.Set[Rule],
   }
   
   lazy val allRules:Traversable[Rule] = innerRules.valuesIterator.toTraversable ++ pretermRules.valuesIterator.toTraversable
+  
+  lazy val innerNonTerms : collection.Set[NonTerm] = findAllInnerNonTerms(allRules)
+  private def findAllInnerNonTerms(allRules:Traversable[Rule]) : collection.Set[NonTerm] = {
+    val nonTerms = scala.collection.mutable.Set[NonTerm]()
+    
+    System.err.println("START computing the number of real inner non-terminals")
+
+    for(rule <- allRules){
+      val nt = rule.lhs
+      val strNT:String = this.nonTerms(nt)
+      if( ! strNT.startsWith("tag_")){
+        nonTerms += nt
+      }
+    }
+
+    System.err.println("DONE computing the number of real inner non-terminals")
+    System.err.println("FOUND "+(nonTerms.size)+" real inner non-terminals")
+    
+    nonTerms
+  }
   
   def getInnerRule(lhs:NonTerm, rhs:List[NonTerm]) : Option[Rule] = {
     if(dummy){
@@ -277,8 +298,69 @@ class Grammar ( rulesArg:Traversable[Rule], // scala.collection.Set[Rule],
     }
     grPW.close()
   }
+
+  def save(fnOut:String, dephrased:Boolean) : Unit = {
+    val fn = if(new File(fnOut).exists()){
+      System.err.println(s"$fnOut already exists!")
+
+      val ft = new SimpleDateFormat ("_HH:mm_dd.MM.yyyy")
+      val newFN = fnOut+ft.format(new Date())
+      System.err.println(s"I'll save to $newFN instead")
+      newFN
+    }else{
+      fnOut
+    }
+    System.err.println(s"STARTED saving the grammar at $fn")
+    val pw = new PrintWriter(fn)
+    
+    pw.println("NONTERMS ||| "+nonTerms.allStrings.mkString(" "))
+    
+    val newFakeRules = scala.collection.mutable.Set[String]()
+    
+    rulesArg.foreach{
+      case InnerRule(lhs, rhs, prob) =>
+        val lhsStr  = nonTerms(lhs)
+        val rhsStr  = rhs.map{nonTerms(_)}.mkString(" ")
+        val probStr = prob.toDouble
+        if(prob.toDouble != 0.0){
+          pw.println(s"RULE ||| $lhsStr -> $rhsStr ||| $probStr")
+        }
+      case PretermRule(lhs, word, prob) =>
+        val lhsStr   = nonTerms(lhs)
+        val wordStr  = voc(word)
+        val probStr = prob.toDouble
+        
+        if(dephrased && lhsStr.startsWith("tag_[[[") && lhsStr.endsWith("]]]") && lhsStr.contains("___")){
+          val words = lhsStr.drop(7).dropRight(3).split("___").toList.map{_.replaceAllLiterally("STAR", "*")}
+          val wordsPOSs = words.map{"tag_"+_}
+          pw.println(s"RULE ||| $lhsStr -> "+ wordsPOSs.mkString(" ") + s" ||| $probStr")
+          words.filterNot{voc.contains(_)}.foreach{ word =>
+            val ruleStr = s"RULE ||| tag_"+Grammar.unknownToken+s" -> '$word' ||| 1.0"
+            if( ! newFakeRules.contains(ruleStr)){
+              pw.println(ruleStr)
+              newFakeRules += ruleStr
+            }
+          }
+        }else{
+          if(prob.toDouble != 0.0){
+            pw.println(s"RULE ||| $lhsStr -> '$wordStr' ||| $probStr")
+          }
+        }
+    }
+    
+    latentMappings.toList.map{ case (mother, children) =>
+      val motherStr = nonTerms(mother)
+      val childrenStr = children.map{nonTerms(_)}.mkString(" ")
+      s"SPLIT ||| $motherStr ||| $childrenStr"
+    }.sorted.foreach{pw.println(_)}
+
+    pw.close()
+
+    System.err.println(s"DONE saving the grammar at $fn")
+
+  }
   
-  def save(fnOut:String) : Unit = {
+  def saveOld(fnOut:String) : Unit = {
     val fn = if(new File(fnOut).exists()){
       System.err.println(s"$fnOut already exists!")
 

@@ -6,6 +6,22 @@ import scala.collection.JavaConversions
 
 class IntMapping {
   
+  override
+  def clone() : IntMapping = {
+    val copy = new IntMapping()
+    
+    val it = voc.iterator()
+    while(it.hasNext()){
+      it.advance()
+      val str = it.key()
+      val int = it.value()
+      copy.voc.put(str, int)
+      copy.inverseVoc.put(int, str)
+    }
+    
+    copy
+  }
+  
   private var locked = false
   
   def lock():Unit = {
@@ -23,9 +39,9 @@ class IntMapping {
   
   private var maxInt = 0
   
-  private var voc = new TObjectIntHashMap[String]()
+  private val voc = new TObjectIntHashMap[String]()
 
-  private var inverseVoc = new TIntObjectHashMap[String]()
+  private val inverseVoc = new TIntObjectHashMap[String]()
 
   // private var voc = Map[String, Int]()
 

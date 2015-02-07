@@ -171,7 +171,11 @@ object InsideOutside {
                  batchSize:Int,
                  threads:Int,
                  randomness:Double,
-                 hardEMtopK:Int
+                 hardEMtopK:Int,
+                 attachLeft:Boolean,
+                 attachRight:Boolean,
+                 attachTop:Boolean,
+                 attachBottom:Boolean
                     ) : (Map[Rule, Double], Probability) = {
     g.voc.lock()
     val trainingBatches = if(threads>1){
@@ -187,15 +191,13 @@ object InsideOutside {
     var startTime = System.currentTimeMillis()
     val totalSentsToProcess = trainingData.size
 
-    val (
-        expectedCounts:Map[Rule, Double],
-        allSplitLikelihood:Probability) = trainingBatches.map{ miniBatch:List[(String, String, POSseq)] =>
-      miniBatch.map{ case (sent, alignment, posSequence) =>
+    val parallelExpectations = trainingBatches.map{ miniBatch:List[(String, String, POSseq)] =>
+      val miniBatchResults = miniBatch.map{ case (sent, alignment, posSequence) =>
 
         val a = AlignmentCanonicalParser.extractAlignment(alignment)
         val s = sent.split(" +").toList
         
-        val alignmentParser = new AlignmentForestParserWithTags(g=g)
+        val alignmentParser = new AlignmentForestParserWithTags(g=g, attachLeft=attachLeft, attachRight=attachRight, attachTop=attachTop, attachBottom=attachBottom, beSafeBecauseOfPruning=true)
   
         val chart:Chart = alignmentParser.parse(sent=s, a=a, tags=posSequence)
         
@@ -230,10 +232,17 @@ object InsideOutside {
         processed += 1
 
         (chartExpectations, sentProb)
-      }.reduce( (a,b) => sumExpectations(a, b) )
-    }.reduce( (a,b) => sumExpectations(a,b) )
+      } // .reduce( (a:(scala.collection.Map[Rule, Double], Probability),b:(scala.collection.Map[Rule, Double], Probability)) => sumExpectations(a, b) )
+      val (a, b) = sumManyExpectations(miniBatchResults)
+      // (a.toMap, b)
+      (a, b)
+    }.seq // .reduce( (a,b) => sumExpectations(a,b) )
     
-    (expectedCounts.withDefaultValue(0.0), allSplitLikelihood)
+    val (
+        expectedCounts:scala.collection.Map[Rule, Double],
+        allSplitLikelihood:Probability) = sumManyExpectations(parallelExpectations)
+    
+    (expectedCounts.toMap.withDefaultValue(0.0), allSplitLikelihood)
   }
   
   def maximization(g:Grammar, expectedCounts:scala.collection.Map[Rule, Double]) : Grammar = {
@@ -276,6 +285,20 @@ object InsideOutside {
     
     newGrammar
   }
+  
+  private def sumManyExpectations(toSum:Traversable[(scala.collection.Map[Rule, Double], Probability)]) : (scala.collection.Map[Rule, Double], Probability) = {
+    val totalExp = scala.collection.mutable.Map[Rule, Double]()
+    var totalLikelihood = LogOne
+    for((aExp, aLikelihood) <- toSum){
+      totalLikelihood *= aLikelihood
+      
+      for((k, v) <- aExp){
+        totalExp(k) = totalExp.getOrElse(k, 0.0) + v
+      }
+    }
+    
+    (totalExp, totalLikelihood)
+  }
 
   private def sumExpectations(
       a:(Map[Rule, Double], Probability),
@@ -300,7 +323,13 @@ object InsideOutside {
    * MUST NOT be parallelized because it contains mutable vocabulary (and maybe some other things)
    * anyway this phase is really fast so again NO NEED for parallelization
    */
-  def initialIteration( trainingData:List[(String, String, POSseq)]) : Grammar = {
+  def initialIteration(
+      trainingData:List[(String, String, POSseq)],
+      attachLeft:Boolean,
+      attachRight:Boolean,
+      attachTop:Boolean,
+      attachBottom:Boolean
+      ) : Grammar = {
     val posTags = scala.collection.mutable.Set[String]()
     for((_, _, poss) <- trainingData){
       for(positionPoss <- poss){
@@ -324,7 +353,7 @@ object InsideOutside {
       val a = AlignmentCanonicalParser.extractAlignment(alignment)
       val s = sent.split(" +").toList
       s.foreach(voc(_))
-      val alignmentParser = new AlignmentForestParserWithTags(g=g)
+      val alignmentParser = new AlignmentForestParserWithTags(g=g, attachLeft=attachLeft, attachRight=attachRight, attachTop=attachTop, attachBottom=attachBottom, beSafeBecauseOfPruning=true)
       val chart:Chart = alignmentParser.parse(sent=s, a=a, tags=posSequence)
       for((rule, count) <- this.extractRuleCounts(chart)){
         allRuleCounts(rule) = allRuleCounts(rule)+count
@@ -354,7 +383,7 @@ object InsideOutside {
     newGrammar
   }
   
-  def computeSoftExpectedCountPerChart(chart:Chart, g:Grammar, randomness:Double) : (Map[Rule, Double], Probability) = {
+  def computeSoftExpectedCountPerChart(chart:Chart, g:Grammar, randomness:Double) : (scala.collection.Map[Rule, Double], Probability) = {
     val n = chart.size
     val sentProb = chart(0)(n-1).get(g.ROOT).inside
     
@@ -383,10 +412,10 @@ object InsideOutside {
       }
     }
 
-    (ruleCountAcc.toMap, sentProb)
+    (ruleCountAcc, sentProb)
   }
   
-  def computeHardExpectedCountPerChart(chart:Chart, g:Grammar, randomness:Double, k:Int) : (Map[Rule, Double], Probability) = {
+  def computeHardExpectedCountPerChart(chart:Chart, g:Grammar, randomness:Double, k:Int) : (scala.collection.Map[Rule, Double], Probability) = {
     val ruleCountAcc = scala.collection.mutable.Map[Rule, Double]().withDefaultValue(0.0)
     
     val kBestTrees = KBestExtractor.extractKbest(g, chart, k)
@@ -401,7 +430,7 @@ object InsideOutside {
       }
     }
     
-    (ruleCountAcc.toMap, sentProb)
+    (ruleCountAcc, sentProb)
   }
   
 }

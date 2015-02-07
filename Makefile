@@ -59,6 +59,10 @@ bin:
 	$(SCALA_COMPILER) -d bin -classpath `find lib -name \*.jar| tr "\n" :` `find src -name \*.scala`
 
 deploy: jar
+	scp -r lib *.jar rg_0.1.jar mstanoj1@laco10.science.uva.nl:/home/mstanoj1/experiments/ACL14_reordering/en_ja/playground/s.install_reordering_grammarian.b8a76e71.20150115-0315/rg
+
+
+deploy4: jar
 #scp -r lib *.jar mstanoj1@laco11.science.uva.nl:/home/mstanoj1/experiments/2015_NAACL/kftt_moses/kftt-moses-1.4
 	scp -r rg_0.1.jar mstanoj1@laco11.science.uva.nl:/home/mstanoj1/experiments/2015_NAACL/kftt_moses/kftt-moses-1.4/rg_0.1.jar
 

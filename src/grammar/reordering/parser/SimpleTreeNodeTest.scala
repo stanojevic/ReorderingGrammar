@@ -2,6 +2,16 @@ package grammar.reordering.parser
 
 import org.scalatest.FlatSpec
 import org.scalatest.matchers.ShouldMatchers
+import grammar.reordering.representation.Probability
+import grammar.reordering.EM.BatchEM
+import grammar.reordering.alignment.Preprocessing
+import grammar.reordering.EM.InsideOutside
+import grammar.reordering.EM.GrammarSplitter
+import grammar.reordering.alignment.AlignmentCanonicalParser
+import grammar.reordering.alignment.AlignmentForestParserWithTags
+import grammar.reordering.representation.Chart
+import grammar.reordering.representation.Rule
+import grammar.reordering.representation.Grammar
 
 class SimpleTreeNodeTest extends FlatSpec with ShouldMatchers{
 
@@ -21,6 +31,92 @@ class SimpleTreeNodeTest extends FlatSpec with ShouldMatchers{
     println(node.yieldPermutationWithUnaligned)
     println(node.yieldReorderedWithoutUnaligned())
     println(node.yieldReorderedWithUnaligned())
+  }
+  
+  "extracting rules from the tree" should "not fail" in {
+    def iterationNumberStopper(l1:Probability, l2:Probability, it:Int, maxIt:Int) : Boolean = {
+      it>maxIt
+    }
+
+    val sents = List(
+        "Nekakva recenica koja nema mnogo smisla",
+        "Nekakva koja nema recenica mnogo smisla",
+        "koja nema mnogo Nekakva recenica smisla",
+        "Nekakva koja nema recenica mnogo smisla"// ,
+        // "Nekakva koja nema recenica mnogo smisla"//,
+        //"nema mnogo recenica koja Nekakva smisla"
+        )
+    val tags = sents.map{ sent =>
+      val words = sent.split(" +").toList
+      words.map{word =>
+        val tag = "tag_"+word
+        Map(tag -> 1.0)
+      } // stupid trivial tag
+    }
+    val alignments = List(
+        "1-1 2-0 3-0 4-0",
+        "1-1 2-0 3-1 4-0",
+        "1-1 2-0 3-2 4-0",
+        "1-3 2-0 3-3 4-1"
+        )
+
+    val miniBatchSize = 2
+    val threads = 1
+    val trainingData = Preprocessing.zip3(sents, alignments, tags)
+    
+    val stoppingCriteria : (Probability, Probability, Int) => Boolean = iterationNumberStopper(_, _, _, 30)
+    val grammarStorageDir = "batch_EM_grammars"
+      
+    val hardEMtopK = 0
+    val randomness = 0.0
+    
+    val attachLeft = true
+    val attachRight = true
+    val attachTop = true
+    val attachBottom = true
+    
+    
+    val gInit = InsideOutside.initialIteration(trainingData, attachLeft, attachRight, attachTop, attachBottom)
+    val gSplit = GrammarSplitter.split(gInit, threads)
+      
+    val g = BatchEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize, randomness, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom)
+    
+    
+    val a = AlignmentCanonicalParser.extractAlignment(alignments.head)
+    val s:List[String] = sents.head.split(" +").toList
+        
+    val alignmentParser = new AlignmentForestParserWithTags(g=g, attachLeft=attachLeft, attachRight=attachRight, attachTop=attachTop, attachBottom=attachBottom, beSafeBecauseOfPruning=true)
+  
+    val chart:Chart = alignmentParser.parse(sent=s, a=a, tags=trainingData.head._3)
+
+    val k = 2
+    val kBestTrees = KBestExtractor.extractKbest(g, chart, k)
+    
+    val node1 = kBestTrees.head
+    val node2 = kBestTrees.tail.head
+    
+    println("The tree 0 : "+node1)
+    
+    val rules1 = node1.extractRules(g)
+    println("The rules in tree 0 : number = "+rules1.size)
+    rules1.foreach{ rule =>
+      println(rule.toString(g.voc, g.nonTerms))
+    }
+    
+    println("The tree 1 : "+node2)
+    
+    val rules2 = node1.extractRules(g)
+    println("The rules in tree 0 : number = "+rules2.size)
+    rules2.foreach{ rule =>
+      println(rule.toString(g.voc, g.nonTerms))
+    }
+    
+    val (expectations, sentProb) = InsideOutside.computeHardExpectedCountPerChart(chart, g, randomness, k)
+    println(s"sentProb: $sentProb")
+    println("Hard expectations :")
+    println(expectations.map{ case (rule:Rule, count:Double) =>
+      "\t"+rule.toString(g.voc, g.nonTerms)+s"\tcount=$count"
+    }.toList.sorted.mkString("\n"))
   }
 
 }

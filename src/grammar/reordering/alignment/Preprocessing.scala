@@ -37,7 +37,7 @@ object Preprocessing {
     }
   }
 
-  def prepareTrainingDataForUnknownWords( sents : List[String], maxUnknownCount:Int = 3) : List[String] = {
+  def prepareTrainingDataForUnknownWords( sents : List[String], maxUnknownCount:Int = 2) : List[String] = {
     prepareTrainingDataForUnknownWordsDetailed(sents.map{_.split(" +").toList}, maxUnknownCount).map{_.mkString(" ")}
   }
   

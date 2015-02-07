@@ -66,12 +66,12 @@ class AlignmentForestParserWithTagsTest extends FlatSpec with ShouldMatchers{
         dummy=true
         )
     
-    val alignmentParser1 = new AlignmentForestParserWithTags(g=g)
+    val alignmentParser1 = new AlignmentForestParserWithTags(g=g, attachLeft=true, attachRight=true, attachTop=true, attachBottom=true, beSafeBecauseOfPruning=true)
     val chartDummy = alignmentParser1.parse(sent=words, a=alignment, tags=tags)
     
     val splitG = GrammarSplitter.split(g, threads=2)
 
-    val alignmentParser2 = new AlignmentForestParserWithTags(g=splitG)
+    val alignmentParser2 = new AlignmentForestParserWithTags(g=splitG, attachLeft=true, attachRight=true, attachTop=true, attachBottom=true, beSafeBecauseOfPruning=true)
     val chart = alignmentParser2.parse(sent=words, a=alignment, tags=tags)
     
     // val n = chart.size

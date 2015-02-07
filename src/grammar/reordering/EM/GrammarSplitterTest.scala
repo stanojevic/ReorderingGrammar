@@ -14,10 +14,16 @@ class GrammarSplitterTest extends FlatSpec with ShouldMatchers{
       Map(tag -> 1.0)
     } // stupid trivial tag
     
-    val g = InsideOutside.initialIteration(List((sent, alignment, tags)))
+    val attachLeft = true
+    val attachRight = true
+    val attachTop = true
+    val attachBottom = true
+    
+    val g = InsideOutside.initialIteration(List((sent, alignment, tags)), attachLeft, attachRight, attachTop, attachBottom)
+
     val g1 = GrammarSplitter.split(g, threads)
     
-    g1.save("grammar_testingGrammarSplitter.txt")
+    g1.save("grammar_testingGrammarSplitter.txt", dephrased=false)
 
   }
 

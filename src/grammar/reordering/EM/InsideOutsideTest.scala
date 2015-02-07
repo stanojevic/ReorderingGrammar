@@ -21,7 +21,12 @@ class InsideOutsideTest extends FlatSpec with ShouldMatchers{
       Map(tag -> 1.0)
     } // stupid trivial tag
     
-    val g = InsideOutside.initialIteration(List((sent, alignment, tags)))
+    val attachLeft = true
+    val attachRight = true
+    val attachTop = true
+    val attachBottom = true
+    
+    val g = InsideOutside.initialIteration(List((sent, alignment, tags)), attachLeft, attachRight, attachTop, attachBottom)
     // println(g)
   }
 

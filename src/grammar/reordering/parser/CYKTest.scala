@@ -39,7 +39,12 @@ class CYKTest extends FlatSpec with ShouldMatchers{
     val lambda = 0.1
     val flattenInChart = true
     
-    val gInit = InsideOutside.initialIteration(trainingData)
+    val attachLeft = true
+    val attachRight = true
+    val attachTop = true
+    val attachBottom = true
+    
+    val gInit = InsideOutside.initialIteration(trainingData, attachLeft, attachRight, attachTop, attachBottom)
 
     var g:Grammar = GrammarSplitter.split(gInit, threads)
     
@@ -47,7 +52,7 @@ class CYKTest extends FlatSpec with ShouldMatchers{
     val kBestHardEM = 0
     
     for(i <- 1 to 10){
-      val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, kBestHardEM)
+      val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, kBestHardEM, attachLeft, attachRight, attachTop, attachBottom)
       g = InsideOutside.maximization(g, expectedCounts)
       println(s"iteration $i $likelihood")
     }
@@ -87,6 +92,11 @@ class CYKTest extends FlatSpec with ShouldMatchers{
         Map(tag -> 1.0)
       } // stupid trivial tag
     }
+    
+    val attachLeft = true
+    val attachRight = true
+    val attachTop = true
+    val attachBottom = true
       
     val trainingData = Preprocessing.zip3(sents, alignments, tags)
 
@@ -95,14 +105,14 @@ class CYKTest extends FlatSpec with ShouldMatchers{
     val lambda = 0.1
     val flattenInChart = true
     
-    val gInit = InsideOutside.initialIteration(trainingData)
+    val gInit = InsideOutside.initialIteration(trainingData, attachLeft, attachRight, attachTop, attachBottom)
     var g:Grammar = GrammarSplitter.split(gInit, threads)
 
     val randomness = 0.0
     val kBestHardEM = 0
     
     for(i <- 1 to 10){
-      val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, kBestHardEM)
+      val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, kBestHardEM, attachLeft, attachRight, attachTop, attachBottom)
       g = InsideOutside.maximization(g, expectedCounts)
       println(s"iteration $i $likelihood")
     }

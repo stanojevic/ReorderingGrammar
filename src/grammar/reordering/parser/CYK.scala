@@ -91,8 +91,6 @@ object CYK {
     
     /// inner stuff ///
     for(span <- 2 to n){
-      val beamSize = exponentialDecay(g.nonTerms.size, n, span, lambda)
-        
       for(i <- 0 until n-span+1){
         val j = i + span - 1
         
@@ -103,12 +101,27 @@ object CYK {
         g.phraseRules.get(phraseStr) match {
           case Some(phraseRule @ InnerRule(lhs, rhs, prob)) =>
             val splits = (i+1 to j).toList
-            val newEdge = Edge(i, j, phraseRule, splits)
+            var safeToInsert = true
+            val realRhs = ((i to j) zip rhs).map{ case (location:Int, nt:NonTerm) =>
+              if(chart(location)(location).containsKey(nt)){
+                nt
+              }else if(chart(location)(location).containsKey(g.unknownTag)){
+                g.unknownTag
+              }else{
+                System.err.println("fuck fuck fuck")
+                safeToInsert = false
+                g.unknown
+              }
+            }.toList
             // warning: we don't check for the nodes bellow that
             // the edge connects to to see if they are pruned
             // because we don't prune PreTerms atm
-            chart(i)(j).putIfAbsent(lhs, new NonTermSpan())
-            chart(i)(j).get(lhs).addEdge(newEdge)
+            if(safeToInsert){
+              val realRule = InnerRule(lhs, realRhs, prob)
+              val newEdge = Edge(i, j, realRule, splits)
+              chart(i)(j).putIfAbsent(lhs, new NonTermSpan())
+              chart(i)(j).get(lhs).addEdge(newEdge)
+            }
           case _ =>
         }
 
@@ -129,24 +142,7 @@ object CYK {
         }
         
         ////// step 1.3 pruning of Nary nodes ////
-        ////// don't prune ROOT! we need it for glue rules //////
-        
-        var nonTermSpans = List[(NonTerm, NonTermSpan)]()
-        val pruningIt = chart(i)(j).iterator()
-        while(pruningIt.hasNext()){
-          pruningIt.advance()
-          nonTermSpans ::= (pruningIt.key(), pruningIt.value())
-        }
-        val nonTermsToKeep = nonTermSpans.sortBy{case (nt, nts) => nts.inside.toDouble}.take(beamSize).map{_._1}.toSet
-        val pruningIt2 = chart(i)(j).iterator()
-        while(pruningIt2.hasNext()){
-          pruningIt2.advance()
-          val lhs = pruningIt2.key()
-          if( (lhs != g.ROOT) && 
-              ! (nonTermsToKeep contains lhs)  ){
-            pruningIt2.remove()
-          }
-        }
+        ////// this is probably not needed anymore
         
         ////// step 1.4 filling UNARY rules in real chart ////
         for(rhs1 <- chart(i)(j).keys){
@@ -163,7 +159,7 @@ object CYK {
         }
 
         ////// step 1.5 pruning of Unarys ////
-        ////// In this case not really necessary since the only unary inner rule is ROOT -> whatever /////
+        pruneChartSpan(chart, g, i, j, lambda)
         
         ////// step 1.6 completing FAR from complete dot rules ////
         for(split <- i+1 to j){
@@ -202,6 +198,45 @@ object CYK {
     chart
   }
   
+  private def pruneChartSpan(chart: Chart, g:Grammar, i:Int, j:Int, lambda:Double) : Unit = {
+    ////// don't prune ROOT! we need it for glue rules ////// this is probably not true anymore
+    
+    val n = chart.size
+    val span = j-i+1
+
+    val beamSize = if(lambda < 0){
+      -lambda.toInt
+    }else{
+      exponentialDecay(g.innerNonTerms.size+4, n, span, lambda)
+    }
+    
+    var nonTermSpans = List[(NonTerm, NonTermSpan)]()
+    val pruningIt = chart(i)(j).iterator()
+    while(pruningIt.hasNext()){
+      pruningIt.advance()
+      nonTermSpans ::= (pruningIt.key(), pruningIt.value())
+    }
+    val nonTermsToKeep = nonTermSpans.sortBy{case (nt, nts) => nts.inside.toDouble}.take(beamSize).map{_._1}.toSet
+    val pruningIt2 = chart(i)(j).iterator()
+    while(pruningIt2.hasNext()){
+      pruningIt2.advance()
+      val lhs = pruningIt2.key()
+      if( (lhs != g.ROOT) && ! (nonTermsToKeep contains lhs)  ){
+        // deleting the non-term
+        pruningIt2.remove()
+      }else{
+        // keeping non-term and filtering edges
+        val nts = pruningIt2.value
+        nts.edges.foreach{
+          case edge @ Edge(_, _, InnerRule(_, List(rhs), _), List(), _) if ! nonTermsToKeep.contains(rhs) =>
+            // remove unary edge that has rhs that will be deleted
+            nts.removeEdge(edge)
+          case _ =>
+        }
+      }
+    }
+  }
+  
   private def glueChart(chart: Chart, g:Grammar) : Unit = {
     val n = chart.size
     val glueProb = Probability(0.000000000000000000001)
@@ -237,6 +272,8 @@ object CYK {
   
   @inline
   private def exponentialDecay(maxNumberOfConstituents:Int, n:Int, spanSize:Int, lambda:Double) : Int = {
+    // Exponential Decay Pruning for Bottom - Up Beam - Search Parsing
+    // inspired by http://www.csee.ogi.edu/~bodensta/2010-exp-decay.pdf
     val beamSize = maxNumberOfConstituents.toDouble * Math.exp(-lambda * spanSize * n)
     if(beamSize <2)
       2

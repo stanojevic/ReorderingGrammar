@@ -115,6 +115,8 @@ object KBestExtractor {
     var enqueued = scala.collection.mutable.Set[List[Int]]()
     
     val initVec = Array.fill(arity)(0).toList
+
+
     val children:List[SimpleTreeNode] = (0 until arity).map{ childOrder =>
       candidates(childOrder)(0)
     }.toList

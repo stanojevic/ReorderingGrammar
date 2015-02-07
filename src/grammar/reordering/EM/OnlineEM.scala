@@ -27,13 +27,17 @@ object OnlineEM {
                  threadBatchSize:Int,
                  onlineBatchSize:Int,
                  alphaRate:Double,
-                 randomness:Double
+                 randomness:Double,
+                 attachLeft:Boolean,
+                 attachRight:Boolean,
+                 attachTop:Boolean,
+                 attachBottom:Boolean
                     ) : Unit = {
     var initCounts = Map[Rule, Double]()
     for(rule <- initG.allRules){
       initCounts += rule -> 1000.0
     }
-    var currentCounts = initCounts
+    var currentCounts:scala.collection.Map[Rule, Double] = initCounts
     
     var prevLikelihood = LogNil
     var currentLikelihood = LogNil // unimporant initialization
@@ -48,12 +52,12 @@ object OnlineEM {
       System.err.println(s"Iteration $it started at $date")
       System.err.println()
 
-      val result = iteration(trainingData, currentG, threads, threadBatchSize, onlineBatchSize, currentCounts, alphaRate, randomness)
+      val result = iteration(trainingData, currentG, threads, threadBatchSize, onlineBatchSize, currentCounts, alphaRate, randomness, attachLeft, attachRight, attachTop, attachBottom)
       currentG = result._1
       currentLikelihood = result._2
       currentCounts = result._3
       
-      currentG.save(output+"/grammar_"+it)
+      currentG.save(output+"/grammar_"+it, dephrased=false)
       val perplexityPerWord = Math.exp(-currentLikelihood.log/wordCount)
       System.err.println()
       System.err.println(s"Grammar $it: likelihood $currentLikelihood")
@@ -70,10 +74,14 @@ object OnlineEM {
                  threads:Int,
                  threadBatchSize:Int,
                  onlineBatchSize:Int,
-                 initCounts:Map[Rule, Double],
+                 initCounts:scala.collection.Map[Rule, Double],
                  alphaRate:Double, // must be between 0.5 (fast and instable) and 1 (slow and stable)
-                 randomness:Double
-                    ) : (Grammar, Probability, Map[Rule, Double]) = {
+                 randomness:Double,
+                 attachLeft:Boolean,
+                 attachRight:Boolean,
+                 attachTop:Boolean,
+                 attachBottom:Boolean
+                    ) : (Grammar, Probability, scala.collection.Map[Rule, Double]) = {
     
     val counts = scala.collection.mutable.Map[Rule, Double]().withDefaultValue(0.0)
     for((rule, count) <- initCounts){
@@ -104,12 +112,13 @@ object OnlineEM {
                           }else{
                             (trainingBatch zip scalingFactors).grouped(threadBatchSize).toList
                           }
-      val manyScaledExpectations:List[(Probability, Map[Rule, Double])] = preparedBatch.map{ miniBatch =>
+      val manyScaledExpectations:List[(Probability, scala.collection.Map[Rule, Double])] = preparedBatch.map{ miniBatch =>
         val result = miniBatch.map{ case ((sent, alignment, pos), scalingFactor) =>
           val a = AlignmentCanonicalParser.extractAlignment(alignment)
           val s = sent.split(" +").toList
           
-          val alignmentParser =  new AlignmentForestParserWithTags(g=currentG)
+          val alignmentParser =  new AlignmentForestParserWithTags(g=currentG, attachLeft=attachLeft, attachRight=attachRight, attachTop=attachTop, attachBottom=attachBottom, beSafeBecauseOfPruning=true)
+
           val chart:Chart = alignmentParser.parse(sent=s, a=a, tags=pos)
           InsideOutside.inside(chart, currentG)
           InsideOutside.outside(chart, currentG)
@@ -147,7 +156,7 @@ object OnlineEM {
       k += onlineBatchSize
     }
     
-    (currentG, totalProb, counts.toMap)
+    (currentG, totalProb, counts)
   }
 
   private def computeScalingFactors(oldPrevDenominator:Double, nks:List[Double]) : (Double, List[Double]) = {

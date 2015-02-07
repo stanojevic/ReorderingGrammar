@@ -27,12 +27,16 @@ object Train {
       narySplits  : Int = 1,
       onlineBatchSize : Int = 10000,
       threadBatchSize : Int = 1000,
-      hardEMbestK : Int = 1,
+      hardEMbestK : Int = -1,
       randomnessInEstimation : Double = 0.0,
       onlineAlpha:Double = 0.6,
       initGrammarFN : String = null,
       iterations : Int = 30,
-      convergenceThreshold : Double = -1
+      convergenceThreshold : Double = -1,
+      attachLeft  : Boolean = true,
+      attachRight : Boolean = true,
+      attachTop   : Boolean = true,
+      attachBottom: Boolean = true
   )
   
   private val argumentParser = new scopt.OptionParser[Config]("ReorderingGrammar") {
@@ -69,6 +73,22 @@ object Train {
       
       opt[String]('g', "initGrammarFN") action { (x, c) =>
         c.copy(initGrammarFN = x)
+      }
+      
+      opt[Boolean]("nullAttachLeft") action { (x, c) =>
+        c.copy(attachLeft = x)
+      }
+      
+      opt[Boolean]("nullAttachRight") action { (x, c) =>
+        c.copy(attachRight = x)
+      }
+      
+      opt[Boolean]("nullAttachTop") action { (x, c) =>
+        c.copy(attachTop = x)
+      }
+      
+      opt[Boolean]("nullAttachBottom") action { (x, c) =>
+        c.copy(attachBottom = x)
       }
       
       opt[Int]("hard_EM_best_K") action { (x, c) =>
@@ -113,10 +133,14 @@ object Train {
       grammarOutputPrefix:String,
       binarySplits:Int,
       narySplits:Int,
-      threads:Int ) : Grammar = {
+      threads:Int,
+      attachLeft:Boolean,
+      attachRight:Boolean,
+      attachTop:Boolean,
+      attachBottom:Boolean) : Grammar = {
     System.err.println("START creating init grammar")
-    val initG = InsideOutside.initialIteration(trainingData)
-    initG.save(grammarOutputPrefix+"nonSplittedGrammar")
+    val initG = InsideOutside.initialIteration(trainingData, attachLeft, attachRight, attachTop, attachBottom)
+    initG.save(grammarOutputPrefix+"/nonSplittedGrammar", dephrased=false)
     System.err.println("DONE creating init grammar")
     System.err.println("START splitting init grammar")
     System.err.println(s"splitting binary into $binarySplits")
@@ -124,7 +148,8 @@ object Train {
     val splittingConfig = GrammarSplitter.computeDefaultCategorySplitsConfiguration(binarySplits, narySplits)
     val splittedGrammar = GrammarSplitter.split(initG, threads, splittingConfig)
     System.err.println("DONE splitting init grammar")
-    splittedGrammar.save(grammarOutputPrefix+"initGrammar")
+    splittedGrammar.save(grammarOutputPrefix+"/initGrammar", dephrased=false)
+
     System.err.println("init grammar is saved")
     splittedGrammar
   }
@@ -284,15 +309,15 @@ object Train {
         val srcSents     : List[String] = Preprocessing.prepareTrainingDataForUnknownWords(phraseMergedSentences)
         
         val posSequences : List[POSseq] = if(config.wordClassFile != null) {
-          wordClassSequence(phraseMergedSentences, phraseMergedAlignments, config.wordClassFile)
+          wordClassSequence(srcSents, phraseMergedAlignments, config.wordClassFile)
         }else{
-          wordAsItselfSequence(phraseMergedSentences)
+          wordAsItselfSequence(srcSents)
         }
 
         trainingData = filtering(Preprocessing.zip3(srcSents, phraseMergedAlignments, posSequences))
         firstIterNumber = 0
 
-        initGrammar = makeInitGrammar(trainingData, storage, config.binarySplits, config.narySplits, config.threads)
+        initGrammar = makeInitGrammar(trainingData, storage, config.binarySplits, config.narySplits, config.threads, config.attachLeft, config.attachRight, config.attachTop, config.attachBottom)
       }else{
         initGrammar = Grammar.loadFromFile(config.initGrammarFN)
         firstIterNumber = firstIterationNumber(config.initGrammarFN)
@@ -327,7 +352,12 @@ object Train {
             config.threads,
             config.threadBatchSize,
             config.randomnessInEstimation,
-            config.hardEMbestK)
+            config.hardEMbestK,
+            config.attachLeft,
+            config.attachRight,
+            config.attachTop,
+            config.attachBottom
+            )
         System.err.println("DONE Batch EM training")
       }else{
         // online EM
@@ -342,13 +372,19 @@ object Train {
             config.threadBatchSize,
             config.onlineBatchSize,
             config.randomnessInEstimation,
-            config.onlineAlpha)
+            config.onlineAlpha,
+            config.attachLeft,
+            config.attachRight,
+            config.attachTop,
+            config.attachBottom
+            )
         System.err.println("DONE Online EM training")
       }
       
       // do stuff
     } getOrElse {
       System.err.println("arguments are bad")
+      System.exit(-1)
     }
   }
 

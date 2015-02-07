@@ -33,10 +33,15 @@ class BatchEMTest extends FlatSpec with ShouldMatchers {
         "1-3 2-0 3-3 4-1"
         )
 
+    val attachLeft = true
+    val attachRight = false
+    val attachTop = false
+    val attachBottom = true
+    
     val miniBatchSize = 2
-    val threads = 3
+    val threads = 1
     val trainingData = Preprocessing.zip3(sents, alignments, tags)
-    val gInit = InsideOutside.initialIteration(trainingData)
+    val gInit = InsideOutside.initialIteration(trainingData, attachLeft, attachRight, attachTop, attachBottom)
     val gSplit = GrammarSplitter.split(gInit, threads)
     
     var iteration = 1
@@ -56,10 +61,10 @@ class BatchEMTest extends FlatSpec with ShouldMatchers {
     val stoppingCriteria : (Probability, Probability, Int) => Boolean = iterationNumberStopper(_, _, _, 30)
     val grammarStorageDir = "batch_EM_grammars"
       
-    val hardEMtopK = 2
+    val hardEMtopK = -1
     val randomness = 0.0
       
-    BatchEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize, randomness, hardEMtopK)
+    BatchEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize, randomness, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom)
   }
 
 }

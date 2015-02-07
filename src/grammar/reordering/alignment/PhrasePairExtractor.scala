@@ -99,8 +99,8 @@ object PhrasePairExtractor {
   def unfoldGrammarOfIdioms(oldG:Grammar) : Grammar = {
     
     val newLatentMappings = oldG.latentMappings 
-    val newVoc = oldG.voc
-    val newNonTerms = oldG.nonTerms
+    val newVoc = oldG.voc.clone()
+    val newNonTerms = oldG.nonTerms.clone()
 
     val newRules = scala.collection.mutable.Set[Rule]()
       
@@ -126,14 +126,30 @@ object PhrasePairExtractor {
       val words = lhsStr.drop(7).dropRight(3).split("___").toList.map{_.replaceAllLiterally("STAR", "*")}
       var rhsNodes = List[NonTerm]()
       for(word <- words){
-        nonTerms.unlock()
+        if( ! voc.contains(word)){
+
+          voc.unlock()
+          val wCode = voc(word)
+          voc.lock()
+
+          val unknownTag = tagMarker+Grammar.unknownToken
+          nonTerms.unlock()
+          val ntCode = nonTerms(unknownTag)
+          nonTerms.lock()
+
+          res ::= PretermRule(ntCode, wCode, LogOne)
+        }
+        
         val posTag = tagMarker + word.replaceAllLiterally("*", "STAR")
+        nonTerms.unlock()
         val ntCode = nonTerms(posTag)
         nonTerms.lock() // we have to be careful so it's better to lock it
+
         rhsNodes ::= ntCode
-        voc.unlock()
+        // voc.unlock()
         val wCode = voc(word)
-        voc.lock()      // we have to be careful so it's better to lock it
+        // voc.lock()      // we have to be careful so it's better to lock it
+
         res ::= PretermRule(ntCode, wCode, LogOne)
       }
       rhsNodes = rhsNodes.reverse
@@ -141,6 +157,15 @@ object PhrasePairExtractor {
       res
     }else{
       List(rule)
+    }
+  }
+  
+  def unfakePhrase(phrase:String) : List[String] = {
+    if(phrase.startsWith("[[[") && phrase.endsWith("]]]")){
+      val realPhrase = phrase.substring(3, phrase.size-3)
+      realPhrase.split("___").toList
+    }else{
+      List(phrase)
     }
   }
   
