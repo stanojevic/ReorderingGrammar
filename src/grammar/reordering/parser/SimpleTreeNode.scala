@@ -137,6 +137,13 @@ case class SimpleTreeNode (
         "P12" -> "green3",
         "P21" -> "firebrick1"
     ).withDefaultValue("blue")
+    val shapeMapping = Map[String, String](
+        "P12" -> "ellipse",
+        "P21" -> "hexagon",
+        "P10" -> "ellipse",
+        "P01" -> "ellipse"
+    ).withDefaultValue("")
+
     val terminalColor = "lightblue2"
   
     def toDotStringRec(node:SimpleTreeNode, nodeId:String) : (String, List[String]) = {
@@ -145,8 +152,13 @@ case class SimpleTreeNode (
       val parts = node.label.split("_")
       var terms = List[String]()
       
-      outStr += nodeId+"[label=\""+node.label+"\"; "
-      outStr += "fontcolor="+colorMapping(parts(0))+"; style=bold];\n"
+      outStr += nodeId+"[label=<<B>"+node.label+"</B>>; "
+      outStr += "shape="+shapeMapping(parts(0))+"; "
+      // outStr += "fontcolor="+colorMapping(parts(0))+"; "
+      outStr += "color="+colorMapping(parts(0))+"; "
+      // outStr += "fontname=\"Times-Bold\" ; "
+      outStr += "fontsize=30; "
+      outStr += "style=bold];\n"
       node.children.zipWithIndex.foreach{ case (child, index) =>
         val childName = nodeId+"_"+index
         if(child.children.size > 0){
@@ -174,7 +186,9 @@ case class SimpleTreeNode (
     var outStr = ""
       
     outStr += "graph { \n"
-    outStr += "  label=\""+graphLabel+"\"\n"
+    if(graphLabel != ""){
+      outStr += "  label=<<B>"+graphLabel+"</B>>\n"
+    }
     
     val res = toDotStringRec(this, "node0")
     outStr += res._1
@@ -183,8 +197,10 @@ case class SimpleTreeNode (
     outStr += "  subgraph {rank=same;\n"
     terms.zipWithIndex.foreach{ case (nodeId, i) =>
       val word = sent(i)
-      outStr += "    "+nodeId+"[shape=box; "
-      outStr += "label=\""+word+s" ($i)"+"\" "
+      outStr += "    "+nodeId+"[shape=plaintext; "
+      // outStr += "label=<<B>"+word+s" ($i)"+"</B>> "
+      outStr += "label=<<B>"+word+"</B>> "
+      outStr += "fontsize=30 "
       outStr += "style=bold; "
       outStr += "color="+terminalColor+"];\n"
     }
@@ -196,7 +212,7 @@ case class SimpleTreeNode (
     outStr
   }
   
-  def visualize(sent:List[String] = null, graphLabel:String="graph") : Unit = {
+  def visualize(sent:List[String] = null, graphLabel:String="") : Unit = {
     val workingSent:List[String] = if(sent == null){
       this.yieldOriginalSentence()
     }else{

@@ -193,7 +193,7 @@ object Parse {
               System.err.print(s"$processed/$totalSentsToProcess | last chunk processed for $period s\t")
               val pastMins = (newTime-veryBeginingTime)/60000
               if(processed != 0 && pastMins != 0){
-                val futureMins:Int = (totalSentsToProcess-processed).toInt/(processed/pastMins).toInt
+                val futureMins:Int = ( (totalSentsToProcess.toDouble-processed)/(processed.toDouble/pastMins) ).toInt
                 val partialFutureHours = futureMins/60
                 val partialFutureMins = futureMins%60
                 System.err.print(s"| time left $partialFutureHours h $partialFutureMins m\t")

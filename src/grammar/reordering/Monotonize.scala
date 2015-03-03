@@ -28,6 +28,7 @@ object Monotonize {
       // attachRight : Boolean = true,
       // attachTop   : Boolean = true,
       // attachBottom: Boolean = true,
+      simpleSprime : Boolean = false,
       
       outAlignmentsFN : String = null,
       outSentencesFN : String = null
@@ -44,6 +45,10 @@ object Monotonize {
       opt[String]('a', "alignmentsFile") required() action { (x, c) =>
         c.copy(alignmentFN = x)
       }
+      
+      opt[Boolean]("simpleSprime") action { (x, c) =>
+        c.copy(simpleSprime = x)
+      } text ("no -- use standard minimal phrase reorderin, yes -- use average target position")
       
       // opt[String]('c', "wordClassFile") action { (x, c) =>
       //   c.copy(wordClassFile = x)
@@ -158,16 +163,25 @@ object Monotonize {
         val a = AlignmentCanonicalParser.extractAlignment(align)
         val words = sent.split(" +").toList
         val n = words.size
-        val spans = PhrasePairExtractor.findPhrases(a, n)
-        val (phrasedWords, phrasedAlignments) = PhrasePairExtractor.fakeAlignmentAndFakeWords(words, spans)
+        val (phrasedWords, phrasedAlignments) = if(config.simpleSprime){
+          val newAlignment:Set[(Int, Int)] = simplifyAlignments(a)
+          (words, newAlignment)
+        }else{
+          val spans = PhrasePairExtractor.findPhrases(a, n)
+          PhrasePairExtractor.fakeAlignmentAndFakeWords(words, spans)
+        }
         
         val (newSent, newA) = do_fucking_reordering(phrasedWords, phrasedAlignments, config.attachLeft)
         
-        outSentPW.println(
-            newSent.
-              flatMap{PhrasePairExtractor.unfakePhrase(_)}.
-              mkString(" ")
-              )
+        if(config.simpleSprime){
+          outSentPW.println( newSent.mkString(" ") )
+        }else{
+          outSentPW.println(
+              newSent.
+                flatMap{PhrasePairExtractor.unfakePhrase(_)}.
+                mkString(" ")
+                )
+        }
         // whatever
         // this will not work because you messed up things with phrasedAlignments
         // outAlignPW.println(newA.map{case (i, j) => s"$i-$j"}.mkString(" "))
@@ -186,6 +200,13 @@ object Monotonize {
     } getOrElse {
       System.err.println("arguments are bad")
     }
+  }
+  
+  private def simplifyAlignments(oldA:Set[(Int, Int)]):Set[(Int, Int)] = {
+    oldA.groupBy(_._1).map{ case (x, ys) =>
+      val softTgtPos = ys.map{_._2}.sum.toDouble/ys.size
+      (x, softTgtPos)
+    }.toList.sortBy{_._2}.map{_._1}.zipWithIndex.toSet
   }
   
   def do_fucking_reordering(

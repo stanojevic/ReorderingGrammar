@@ -60,6 +60,7 @@ bin:
 
 deploy: jar
 	scp -r lib *.jar rg_0.1.jar mstanoj1@laco10.science.uva.nl:/home/mstanoj1/experiments/ACL14_reordering/en_ja/playground/s.install_reordering_grammarian.b8a76e71.20150115-0315/rg
+#scp -r lib *.jar rg_0.1.jar mstanoj1@laco9.science.uva.nl:/home/mstanoj1/experiments/ACL14_reordering/de-en/playground/s.install_reordering_grammarian.da0fe160.20150212-1925/rg
 
 
 deploy4: jar
