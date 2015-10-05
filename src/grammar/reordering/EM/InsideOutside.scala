@@ -175,7 +175,9 @@ object InsideOutside {
                  attachLeft:Boolean,
                  attachRight:Boolean,
                  attachTop:Boolean,
-                 attachBottom:Boolean
+                 attachBottom:Boolean,
+                 canonicalOnly:Boolean,
+                 rightBranching:Boolean
                     ) : (Map[Rule, Double], Probability) = {
     g.voc.lock()
     val trainingBatches = if(threads>1){
@@ -197,7 +199,15 @@ object InsideOutside {
         val a = AlignmentCanonicalParser.extractAlignment(alignment)
         val s = sent.split(" +").toList
         
-        val alignmentParser = new AlignmentForestParserWithTags(g=g, attachLeft=attachLeft, attachRight=attachRight, attachTop=attachTop, attachBottom=attachBottom, beSafeBecauseOfPruning=true)
+        val alignmentParser = new AlignmentForestParserWithTags(
+            g=g,
+            attachLeft=attachLeft,
+            attachRight=attachRight,
+            attachTop=attachTop,
+            attachBottom=attachBottom,
+            beSafeBecauseOfPruning=true,
+            canonicalOnly=canonicalOnly,
+            rightBranching=rightBranching)
   
         val chart:Chart = alignmentParser.parse(sent=s, a=a, tags=posSequence)
         
@@ -328,7 +338,9 @@ object InsideOutside {
       attachLeft:Boolean,
       attachRight:Boolean,
       attachTop:Boolean,
-      attachBottom:Boolean
+      attachBottom:Boolean,
+      canonicalOnly:Boolean,
+      rightBranching:Boolean
       ) : Grammar = {
     val posTags = scala.collection.mutable.Set[String]()
     for((_, _, poss) <- trainingData){
@@ -353,7 +365,15 @@ object InsideOutside {
       val a = AlignmentCanonicalParser.extractAlignment(alignment)
       val s = sent.split(" +").toList
       s.foreach(voc(_))
-      val alignmentParser = new AlignmentForestParserWithTags(g=g, attachLeft=attachLeft, attachRight=attachRight, attachTop=attachTop, attachBottom=attachBottom, beSafeBecauseOfPruning=true)
+      val alignmentParser = new AlignmentForestParserWithTags(
+          g=g,
+          attachLeft=attachLeft,
+          attachRight=attachRight,
+          attachTop=attachTop,
+          attachBottom=attachBottom,
+          beSafeBecauseOfPruning=true,
+          canonicalOnly=canonicalOnly,
+          rightBranching=rightBranching)
       val chart:Chart = alignmentParser.parse(sent=s, a=a, tags=posSequence)
       for((rule, count) <- this.extractRuleCounts(chart)){
         allRuleCounts(rule) = allRuleCounts(rule)+count

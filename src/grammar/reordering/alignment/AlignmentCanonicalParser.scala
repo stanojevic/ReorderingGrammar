@@ -5,6 +5,7 @@ import beer.permutation.pet.representation.NonTerm
 import beer.permutation.pet.representation.Term
 import java.io.PrintStream
 import java.io.File
+import beer.permutation.pet.parser.HelperFunctions
 
 object AlignmentCanonicalParser {
   
@@ -16,12 +17,67 @@ object AlignmentCanonicalParser {
       (fields(0).toInt, fields(1).toInt)
     }
   
-  def parse(n:Int, a:Alignment, leftSide:Boolean, lowest:Boolean) : beer.permutation.pet.representation.TreeNode = {
+  private def rebalanceToRight(lefty:TreeNode) : TreeNode = {
+    val flatty = HelperFunctions.collapseTree(lefty)
+    rebalanceNodeToRight(flatty)
+  }
+  
+  private def rebalanceNodeToRight(node:TreeNode) : TreeNode = {
+    node match {
+      case NonTerm(start, end, min, max, operator, children) =>
+        val rightyChildren = children map rebalanceNodeToRight
+        
+        if(
+            (operator == List(1, 2) && rightyChildren.size > 2) ||
+            (operator == List(2, 1) && rightyChildren.size > 2)
+          ){
+          var childrenToProcess = rightyChildren.reverse
+          while(childrenToProcess.size > 1){
+            val rightChild = childrenToProcess.head
+            val  leftChild = childrenToProcess.tail.head
+            childrenToProcess = childrenToProcess.tail.tail
+            
+            val newStart = leftChild.left
+            val newEnd   = rightChild.right
+            val leftMin  = leftChild match {
+              case Term(_, el) => el
+              case NonTerm(_, _, min, _, _, _) => min
+            }
+            val rightMin  = rightChild match {
+              case Term(_, el) => el
+              case NonTerm(_, _, min, _, _, _) => min
+            }
+            val newMin   = math.min(leftMin, rightMin)
+            val leftMax  = leftChild match {
+              case Term(_, el) => el
+              case NonTerm(_, _, _, max, _, _) => max
+            }
+            val rightMax  = rightChild match {
+              case Term(_, el) => el
+              case NonTerm(_, _, _, max, _, _) => max
+            }
+            val newMax   = math.max(leftMax, rightMax)
+            
+            val newChild:TreeNode = NonTerm(newStart, newEnd, newMin, newMax, operator, List(leftChild, rightChild))
+            childrenToProcess ::= newChild
+          }
+          childrenToProcess.head
+        }else{
+          node
+        }
+      case Term(position, el) =>
+        node
+    }
+  }
+  
+  def parse(n:Int, a:Alignment, leftSide:Boolean, lowest:Boolean, rightBranching:Boolean) : beer.permutation.pet.representation.TreeNode = {
     val avgPositions = avgTargetPosition(n, a)
 
     val minPermutation:List[Int] = findMinPermutation(avgPositions.toList) map {_+1}
     
-    val tree = beer.permutation.pet.parser.ShiftReduce.parse(minPermutation)
+    val leftBranchingTree = beer.permutation.pet.parser.ShiftReduce.parse(minPermutation)
+    
+    val tree = if(rightBranching) rebalanceToRight(leftBranchingTree) else leftBranchingTree
     
     val mapping = new Array[Int](n)
     avgPositions.zipWithIndex.filter{_._1>=0}.map{_._2}.zip(minPermutation).foreach{ case (index, permIndex) =>

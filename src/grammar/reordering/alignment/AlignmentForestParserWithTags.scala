@@ -13,8 +13,15 @@ class AlignmentForestParserWithTags (
     attachRight:Boolean,
     attachTop:Boolean,
     attachBottom:Boolean,
-    beSafeBecauseOfPruning:Boolean
+    beSafeBecauseOfPruning:Boolean,
+    canonicalOnly:Boolean,
+    rightBranching:Boolean
     ){
+  
+  if(!canonicalOnly && rightBranching){
+    throw new IllegalArgumentException(
+        s"doesn't make sence to have canonicalOnly=$canonicalOnly && rightBranching=$rightBranching")
+  }
   
   def parse(sent:List[String],
       a:Set[(Int, Int)],
@@ -25,19 +32,19 @@ class AlignmentForestParserWithTags (
     val chart = ChartHelper.emptyChart(n)
     
     if(attachLeft && attachTop){
-      val tree = AlignmentCanonicalParser.parse(sent.size, a, true, false)
+      val tree = AlignmentCanonicalParser.parse(sent.size, a, true, false, rightBranching)
       addToChart(chart, tree, sent, tags)
     }
     if(attachLeft && attachBottom){
-      val tree = AlignmentCanonicalParser.parse(sent.size, a, true, true)
+      val tree = AlignmentCanonicalParser.parse(sent.size, a, true, true, rightBranching)
       addToChart(chart, tree, sent, tags)
     }
     if(attachRight && attachTop){
-      val tree = AlignmentCanonicalParser.parse(sent.size, a, false, false)
+      val tree = AlignmentCanonicalParser.parse(sent.size, a, false, false, rightBranching)
       addToChart(chart, tree, sent, tags)
     }
     if(attachRight && attachBottom){
-      val tree = AlignmentCanonicalParser.parse(sent.size, a, false, true)
+      val tree = AlignmentCanonicalParser.parse(sent.size, a, false, true, rightBranching)
       addToChart(chart, tree, sent, tags)
     }
     
@@ -52,7 +59,7 @@ class AlignmentForestParserWithTags (
       words:List[String],
       tags:POSseq
       ) : Unit = {
-    val collapsedTree = HelperFunctions.collapseTree(tree)
+    val collapsedTree = if(canonicalOnly) tree else HelperFunctions.collapseTree(tree)
     
     collapsedTree match {
 

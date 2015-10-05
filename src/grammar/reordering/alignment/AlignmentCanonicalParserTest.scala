@@ -39,9 +39,8 @@ class AlignmentParserTest extends FlatSpec with ShouldMatchers{
   }
   
   "alignment to tree" should "return correct tree" in {
-    // val a = List( (1,1) , (2,0) , (2, 1) , (3,0), (3,1), (5,1) )
-    val a = Set( (1,1) , (2,0) , (3,0), (5,1) )
-    val n = 8
+    val a = Set( (1,2) , (2,1) , (3,0), (5,2), (6,3), (7,4) )
+    val n = 10
     val correctPet = NonTerm(1, 3, 1, 3, List(1,2), List(
                        NonTerm(1, 2, 1, 2, List(2,1), List(
                            Term(1, 2),
@@ -51,26 +50,27 @@ class AlignmentParserTest extends FlatSpec with ShouldMatchers{
 
     var attachLeft = false
     var attachLow  = true
-    var label = s"left=$attachLeft low=$attachLow"
-    var tree = AlignmentCanonicalParser.parse(n, a, attachLeft, attachLow)
+    val rightBranching = false
+    var label = s"left=$attachLeft low=$attachLow rightBranching=$rightBranching"
+    var tree = AlignmentCanonicalParser.parse(n, a, attachLeft, attachLow, rightBranching)
     AlignmentCanonicalParser.visualizeTree(tree, label)
 
     attachLeft = true
     attachLow  = true
-    label = s"left=$attachLeft low=$attachLow"
-    tree = AlignmentCanonicalParser.parse(n, a, attachLeft, attachLow)
+    label = s"left=$attachLeft low=$attachLow rightBranching=$rightBranching"
+    tree = AlignmentCanonicalParser.parse(n, a, attachLeft, attachLow, rightBranching)
     AlignmentCanonicalParser.visualizeTree(tree, label)
 
     attachLeft = false
     attachLow  = false
-    label = s"left=$attachLeft low=$attachLow"
-    tree = AlignmentCanonicalParser.parse(n, a, attachLeft, attachLow)
+    label = s"left=$attachLeft low=$attachLow rightBranching=$rightBranching"
+    tree = AlignmentCanonicalParser.parse(n, a, attachLeft, attachLow, rightBranching)
     AlignmentCanonicalParser.visualizeTree(tree, label)
 
     attachLeft = true
     attachLow  = false
-    label = s"left=$attachLeft low=$attachLow"
-    tree = AlignmentCanonicalParser.parse(n, a, attachLeft, attachLow)
+    label = s"left=$attachLeft low=$attachLow rightBranching=$rightBranching"
+    tree = AlignmentCanonicalParser.parse(n, a, attachLeft, attachLow, rightBranching)
     AlignmentCanonicalParser.visualizeTree(tree, label)
 
     println("done")

@@ -30,6 +30,7 @@ object Parse {
     outPermutedStringFN: String = null,
     outTreeFN: String = null,
     outQuasiPermFN: String = null,
+    outExpectedKendallFN: String = null,
     threads: Int = 1,
     flushingSize: Int = 10
     )
@@ -52,6 +53,10 @@ object Parse {
 
     opt[String]("outTreeFN") required () action { (x, c) =>
       c.copy(outTreeFN = x)
+    }
+
+    opt[String]("outExpectedKendallFN") required () action { (x, c) =>
+      c.copy(outExpectedKendallFN = x)
     }
 
     opt[String]("outQuasiPermFN") required () action { (x, c) =>
@@ -133,6 +138,12 @@ object Parse {
         new PrintWriter(config.outTreeFN)
       }
 
+      val expectedKendallPW = if (config.outExpectedKendallFN == null) {
+        null
+      } else {
+        new PrintWriter(config.outExpectedKendallFN)
+      }
+
       var processed = 0
       val toProcess = sents.size
       
@@ -167,7 +178,8 @@ object Parse {
             val period_sampling = (time_sampling_end - time_sampling_start)/1000
 
             val time_mbr_start = System.currentTimeMillis()
-            val mbrResult = MBR.rerankFast(rawResult.take(config.kToMBR), new grammar.reordering.parser.metric.Kendall())
+            val (mbrResult:List[(SimpleTreeNode, Double)], featureExpectations:Map[String, Double]) =
+              MBR.rerankFast(rawResult.take(config.kToMBR), new grammar.reordering.parser.metric.Kendall())
             val time_mbr_end = System.currentTimeMillis()
             val period_mbr = (time_mbr_end - time_mbr_start)/1000
 
@@ -201,9 +213,9 @@ object Parse {
               System.err.println()
               startTime = newTime
             }
-            (result.take(config.kToOutput), i)
+            ((result.take(config.kToOutput), featureExpectations), i)
         }.toList.sortBy(_._2).foreach {
-          case (trees: List[SimpleTreeNode], i: Int) => {
+          case ((trees: List[SimpleTreeNode], featureExpectations:Map[String, Double]), i: Int) => {
             System.err.println("flushing output")
             val sent = sents(i).split(" +").toList
             trees.zipWithIndex.foreach { case (tree: SimpleTreeNode, rank: Int) => 
@@ -226,6 +238,20 @@ object Parse {
                 treePW.println(pennTree)
                 treePW.flush()
               }
+              if (expectedKendallPW != null) {
+                val n = sent.size
+                var stringsToOut = List[String]()
+                for(i <- 0 until n-1){
+                  for(j <- i+1 until n){
+                    val riskA = featureExpectations(s"$i, $j")
+                    stringsToOut ::= s"$i:$j:$riskA"
+                    val riskB = featureExpectations(s"$j, $i")
+                    stringsToOut ::= s"$j:$i:$riskB"
+                  }
+                }
+                expectedKendallPW.println(stringsToOut.mkString(" "))
+                expectedKendallPW.flush()
+              }
             }
           }
         }
@@ -236,6 +262,8 @@ object Parse {
       if (permutedStringPW != null) permutedStringPW.close()
 
       if (treePW != null) treePW.close()
+
+      if (expectedKendallPW != null) expectedKendallPW.close()
 
       System.err.println("DONE PARSING")
       System.err.println("STARTED AT "+startDate.toString())

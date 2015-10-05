@@ -74,18 +74,19 @@ class SimpleTreeNodeTest extends FlatSpec with ShouldMatchers{
     val attachRight = true
     val attachTop = true
     val attachBottom = true
+    val canonicalOnly = false
+    val rightBranching = false
     
-    
-    val gInit = InsideOutside.initialIteration(trainingData, attachLeft, attachRight, attachTop, attachBottom)
+    val gInit = InsideOutside.initialIteration(trainingData, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
     val gSplit = GrammarSplitter.split(gInit, threads)
       
-    val g = BatchEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize, randomness, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom)
+    val g = BatchEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize, randomness, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
     
     
     val a = AlignmentCanonicalParser.extractAlignment(alignments.head)
     val s:List[String] = sents.head.split(" +").toList
         
-    val alignmentParser = new AlignmentForestParserWithTags(g=g, attachLeft=attachLeft, attachRight=attachRight, attachTop=attachTop, attachBottom=attachBottom, beSafeBecauseOfPruning=true)
+    val alignmentParser = new AlignmentForestParserWithTags(g=g, attachLeft=attachLeft, attachRight=attachRight, attachTop=attachTop, attachBottom=attachBottom, beSafeBecauseOfPruning=true, canonicalOnly=canonicalOnly, rightBranching=false)
   
     val chart:Chart = alignmentParser.parse(sent=s, a=a, tags=trainingData.head._3)
 

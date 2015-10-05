@@ -21,26 +21,27 @@ class AlignmentForestParserWithTagsTest extends FlatSpec with ShouldMatchers{
     
     var attachLeft = false
     var attachLow  = true
+    val rightBranching = false
     var label = s"left=$attachLeft low=$attachLow"
-    var tree = AlignmentCanonicalParser.parse(n, alignment, attachLeft, attachLow)
+    var tree = AlignmentCanonicalParser.parse(n, alignment, attachLeft, attachLow, rightBranching)
     // AlignmentCanonicalParser.visualizeTree(tree, label)
 
     attachLeft = true
     attachLow  = true
     label = s"left=$attachLeft low=$attachLow"
-    tree = AlignmentCanonicalParser.parse(n, alignment, attachLeft, attachLow)
+    tree = AlignmentCanonicalParser.parse(n, alignment, attachLeft, attachLow, rightBranching)
     // AlignmentCanonicalParser.visualizeTree(tree, label)
 
     attachLeft = false
     attachLow  = false
     label = s"left=$attachLeft low=$attachLow"
-    tree = AlignmentCanonicalParser.parse(n, alignment, attachLeft, attachLow)
+    tree = AlignmentCanonicalParser.parse(n, alignment, attachLeft, attachLow, rightBranching)
     // AlignmentCanonicalParser.visualizeTree(tree, label)
 
     attachLeft = true
     attachLow  = false
     label = s"left=$attachLeft low=$attachLow"
-    tree = AlignmentCanonicalParser.parse(n, alignment, attachLeft, attachLow)
+    tree = AlignmentCanonicalParser.parse(n, alignment, attachLeft, attachLow, rightBranching)
     // AlignmentCanonicalParser.visualizeTree(tree, label)
 
     println("done")
@@ -66,12 +67,12 @@ class AlignmentForestParserWithTagsTest extends FlatSpec with ShouldMatchers{
         dummy=true
         )
     
-    val alignmentParser1 = new AlignmentForestParserWithTags(g=g, attachLeft=true, attachRight=true, attachTop=true, attachBottom=true, beSafeBecauseOfPruning=true)
+    val alignmentParser1 = new AlignmentForestParserWithTags(g=g, attachLeft=true, attachRight=true, attachTop=true, attachBottom=true, beSafeBecauseOfPruning=true, canonicalOnly=false, rightBranching=false)
     val chartDummy = alignmentParser1.parse(sent=words, a=alignment, tags=tags)
     
     val splitG = GrammarSplitter.split(g, threads=2)
 
-    val alignmentParser2 = new AlignmentForestParserWithTags(g=splitG, attachLeft=true, attachRight=true, attachTop=true, attachBottom=true, beSafeBecauseOfPruning=true)
+    val alignmentParser2 = new AlignmentForestParserWithTags(g=splitG, attachLeft=true, attachRight=true, attachTop=true, attachBottom=true, beSafeBecauseOfPruning=true, canonicalOnly=false, rightBranching=false)
     val chart = alignmentParser2.parse(sent=words, a=alignment, tags=tags)
     
     // val n = chart.size

@@ -71,13 +71,14 @@ object Preprocessing {
     val n = a.map{_._1}.max + 1
     val attachLeft = false // doesn't matter
     val attachLow  = false // doesn't matter
+    val rightBranching = false // doesn't matter
     def maxArityRec(node:TreeNode) : Int = node match {
       case NonTerm(start:Int, end:Int, min:Int, max:Int, operator:List[Int], children:List[TreeNode]) =>
         (children.size :: children.map{maxArityRec(_)}).max
       case Term(position:Int, el:Int) =>
         0
     }
-    var tree = AlignmentCanonicalParser.parse(n, a, attachLeft, attachLow)
+    var tree = AlignmentCanonicalParser.parse(n, a, attachLeft, attachLow, rightBranching)
     val arity = maxArityRec(tree)
     arity
   }

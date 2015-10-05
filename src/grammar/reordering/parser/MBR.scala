@@ -7,7 +7,7 @@ import grammar.reordering.representation.Probability
 
 object MBR {
   
-  def rerankFast[A](listToRerank: List[SimpleTreeNode], metricFunc: LinearMetricFunction[A]) : List[(SimpleTreeNode, Double)] = {
+  def rerankFast[A](listToRerank: List[SimpleTreeNode], metricFunc: LinearMetricFunction[A]) : (List[(SimpleTreeNode, Double)], Map[A, Double]) = {
     System.err.println("STARTED MBRing")
     val expectations = scala.collection.mutable.Map[A, Double]().withDefaultValue(0.0)
     val list = renormalizeProbs(listToRerank)
@@ -32,7 +32,7 @@ object MBR {
     System.err.println("best  parse expected metric score: "+result.head._2)
     System.err.println("worst parse expected metric score: "+result.last._2)
 
-    result   
+    (result, expectations.toMap.withDefaultValue(0.0))
   }
   
   def rerankClassic(listToRerank: List[SimpleTreeNode], metricFunc: MetricFunction) : List[(SimpleTreeNode, Double)] = {

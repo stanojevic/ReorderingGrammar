@@ -42,6 +42,7 @@ class MonotonizeTest extends FlatSpec with ShouldMatchers{
         )
     val goodA_left = Set( (3,1), (3,2), (5,4), (0, 0) )
     
+    
     for(attachLeft <- List(true, false)){
       val (newS, newA) = Monotonize.do_fucking_reordering(s, a, attachLeft)
       if(attachLeft){
@@ -57,6 +58,8 @@ class MonotonizeTest extends FlatSpec with ShouldMatchers{
         System.err.println(" newA: "+ newA.toList.sorted)
         System.err.println("goodA: "+goodA_right.toList.sorted)
       }
+      val wordAlignments = Monotonize.convertPhrasalToNormalAlignment(newS, newA)
+      System.err.println("alignment: "+wordAlignments.map{case (i, j) => s"$i-$j"}.mkString(" "))
     }
   }
 

@@ -31,7 +31,9 @@ object OnlineEM {
                  attachLeft:Boolean,
                  attachRight:Boolean,
                  attachTop:Boolean,
-                 attachBottom:Boolean
+                 attachBottom:Boolean,
+                 canonicalOnly:Boolean,
+                 rightBranching:Boolean
                     ) : Unit = {
     var initCounts = Map[Rule, Double]()
     for(rule <- initG.allRules){
@@ -52,7 +54,7 @@ object OnlineEM {
       System.err.println(s"Iteration $it started at $date")
       System.err.println()
 
-      val result = iteration(trainingData, currentG, threads, threadBatchSize, onlineBatchSize, currentCounts, alphaRate, randomness, attachLeft, attachRight, attachTop, attachBottom)
+      val result = iteration(trainingData, currentG, threads, threadBatchSize, onlineBatchSize, currentCounts, alphaRate, randomness, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
       currentG = result._1
       currentLikelihood = result._2
       currentCounts = result._3
@@ -80,7 +82,9 @@ object OnlineEM {
                  attachLeft:Boolean,
                  attachRight:Boolean,
                  attachTop:Boolean,
-                 attachBottom:Boolean
+                 attachBottom:Boolean,
+                 canonicalOnly:Boolean,
+                 rightBranching:Boolean
                     ) : (Grammar, Probability, scala.collection.Map[Rule, Double]) = {
     
     val counts = scala.collection.mutable.Map[Rule, Double]().withDefaultValue(0.0)
@@ -117,7 +121,15 @@ object OnlineEM {
           val a = AlignmentCanonicalParser.extractAlignment(alignment)
           val s = sent.split(" +").toList
           
-          val alignmentParser =  new AlignmentForestParserWithTags(g=currentG, attachLeft=attachLeft, attachRight=attachRight, attachTop=attachTop, attachBottom=attachBottom, beSafeBecauseOfPruning=true)
+          val alignmentParser =  new AlignmentForestParserWithTags(
+              g=currentG,
+              attachLeft=attachLeft,
+              attachRight=attachRight,
+              attachTop=attachTop,
+              attachBottom=attachBottom,
+              beSafeBecauseOfPruning=true,
+              canonicalOnly=canonicalOnly,
+              rightBranching=rightBranching)
 
           val chart:Chart = alignmentParser.parse(sent=s, a=a, tags=pos)
           InsideOutside.inside(chart, currentG)

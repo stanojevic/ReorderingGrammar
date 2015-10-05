@@ -37,11 +37,13 @@ class BatchEMTest extends FlatSpec with ShouldMatchers {
     val attachRight = false
     val attachTop = false
     val attachBottom = true
+    val canonicalOnly = false
+    val rightBranching = false
     
     val miniBatchSize = 2
     val threads = 1
     val trainingData = Preprocessing.zip3(sents, alignments, tags)
-    val gInit = InsideOutside.initialIteration(trainingData, attachLeft, attachRight, attachTop, attachBottom)
+    val gInit = InsideOutside.initialIteration(trainingData, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
     val gSplit = GrammarSplitter.split(gInit, threads)
     
     var iteration = 1
@@ -64,7 +66,7 @@ class BatchEMTest extends FlatSpec with ShouldMatchers {
     val hardEMtopK = -1
     val randomness = 0.0
       
-    BatchEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize, randomness, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom)
+    BatchEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize, randomness, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
   }
 
 }

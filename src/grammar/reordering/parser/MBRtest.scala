@@ -15,7 +15,7 @@ class MBRtest extends FlatSpec with ShouldMatchers{
     val listToRerank = List(tree1, tree2, tree3)
     val metricFunc = new Kendall()
     
-    val res = MBR.rerankFast(listToRerank, metricFunc)
+    val (res, featureExpectations) = MBR.rerankFast(listToRerank, metricFunc)
     for((tree, score) <- res){
       System.err.println(tree)
       System.err.println(score)

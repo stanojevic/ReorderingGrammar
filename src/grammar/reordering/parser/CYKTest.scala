@@ -43,8 +43,10 @@ class CYKTest extends FlatSpec with ShouldMatchers{
     val attachRight = true
     val attachTop = true
     val attachBottom = true
+    val canonicalOnly = false
+    val rightBranching = false
     
-    val gInit = InsideOutside.initialIteration(trainingData, attachLeft, attachRight, attachTop, attachBottom)
+    val gInit = InsideOutside.initialIteration(trainingData, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
 
     var g:Grammar = GrammarSplitter.split(gInit, threads)
     
@@ -52,7 +54,7 @@ class CYKTest extends FlatSpec with ShouldMatchers{
     val kBestHardEM = 0
     
     for(i <- 1 to 10){
-      val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, kBestHardEM, attachLeft, attachRight, attachTop, attachBottom)
+      val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, kBestHardEM, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
       g = InsideOutside.maximization(g, expectedCounts)
       println(s"iteration $i $likelihood")
     }
@@ -97,6 +99,8 @@ class CYKTest extends FlatSpec with ShouldMatchers{
     val attachRight = true
     val attachTop = true
     val attachBottom = true
+    val canonicalOnly = false
+    val rightBranching = false
       
     val trainingData = Preprocessing.zip3(sents, alignments, tags)
 
@@ -105,14 +109,14 @@ class CYKTest extends FlatSpec with ShouldMatchers{
     val lambda = 0.1
     val flattenInChart = true
     
-    val gInit = InsideOutside.initialIteration(trainingData, attachLeft, attachRight, attachTop, attachBottom)
+    val gInit = InsideOutside.initialIteration(trainingData, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
     var g:Grammar = GrammarSplitter.split(gInit, threads)
 
     val randomness = 0.0
     val kBestHardEM = 0
     
     for(i <- 1 to 10){
-      val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, kBestHardEM, attachLeft, attachRight, attachTop, attachBottom)
+      val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, kBestHardEM, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
       g = InsideOutside.maximization(g, expectedCounts)
       println(s"iteration $i $likelihood")
     }

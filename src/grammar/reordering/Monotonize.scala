@@ -122,9 +122,9 @@ object Monotonize {
       //   c.copy(onlineAlpha = x)
       // }
       
-      //     opt[String]("outAlignments") action { (x, c) =>
-      //       c.copy(outAlignmentsFN = x)
-      //     }
+      opt[String]("outAlignments") action { (x, c) =>
+        c.copy(outAlignmentsFN = x)
+      }
       
       opt[String]("outSentences") action { (x, c) =>
         c.copy(outSentencesFN = x)
@@ -182,9 +182,10 @@ object Monotonize {
                 mkString(" ")
                 )
         }
-        // whatever
-        // this will not work because you messed up things with phrasedAlignments
-        // outAlignPW.println(newA.map{case (i, j) => s"$i-$j"}.mkString(" "))
+        if(outAlignPW != null){
+          val dephrasedAlignment = convertPhrasalToNormalAlignment(newSent, newA)
+          outAlignPW.println(dephrasedAlignment.map{case (i, j) => s"$i-$j"}.mkString(" "))
+        }
         
         processed += 1
         if(processed % 1000 == 0){
@@ -200,6 +201,35 @@ object Monotonize {
     } getOrElse {
       System.err.println("arguments are bad")
     }
+  }
+  
+  def convertPhrasalToNormalAlignment(phrasalSent:List[String], phrasalAlign:Set[(Int, Int)]) : Set[(Int, Int)] = {
+    val phraseSizes = phrasalSent.map{PhrasePairExtractor.unfakePhrase(_).size}
+    
+    val sourceStartPositions = collection.mutable.Map[Int, Int]()
+    var nextSrcStartPos = 0
+    phrasalAlign.toList.sortBy{_._1}.foreach{ case (src, tgt) =>
+      sourceStartPositions(src) = nextSrcStartPos
+      nextSrcStartPos += phraseSizes(src)
+    }
+    
+    val targetStartPositions = collection.mutable.Map[Int, Int]()
+    var nextTgtStartPos = 0
+    phrasalAlign.toList.sortBy{_._2}.foreach{ case (src, tgt) =>
+      targetStartPositions(tgt) = nextTgtStartPos
+      nextTgtStartPos += phraseSizes(src)
+    }
+    
+    val newAlignments = collection.mutable.Set[(Int, Int)]()
+    
+    phrasalAlign.foreach{ case (src, tgt) =>
+      for(i <- 0 until phraseSizes(src)){
+        val link = (sourceStartPositions(src)+i, targetStartPositions(tgt)+i)
+        newAlignments += link
+      }
+    }
+
+    newAlignments.toSet
   }
   
   private def simplifyAlignments(oldA:Set[(Int, Int)]):Set[(Int, Int)] = {

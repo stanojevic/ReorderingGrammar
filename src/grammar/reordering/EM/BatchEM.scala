@@ -26,7 +26,9 @@ object BatchEM {
                  attachLeft:Boolean,
                  attachRight:Boolean,
                  attachTop:Boolean,
-                 attachBottom:Boolean
+                 attachBottom:Boolean,
+                 canonicalOnly:Boolean,
+                 rightBranching:Boolean
                     ) : Grammar = {
     var initCounts = Map[Rule, Double]()
     for(rule <- initG.allRules){
@@ -53,10 +55,10 @@ object BatchEM {
         }else{
           System.err.println("SOFT-EM iteration")
         }
-        iteration(trainingData, currentG, threadBatchSize, threads, randomness, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom)
+        iteration(trainingData, currentG, threadBatchSize, threads, randomness, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
       }else{
         System.err.println("SOFT-EM iteration")
-        iteration(trainingData, currentG, threadBatchSize, threads, randomness, -1, attachLeft, attachRight, attachTop, attachBottom)
+        iteration(trainingData, currentG, threadBatchSize, threads, randomness, -1, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
       }
       currentG = result._1
       currentLikelihood = result._2
@@ -87,12 +89,14 @@ object BatchEM {
                  attachLeft:Boolean,
                  attachRight:Boolean,
                  attachTop:Boolean,
-                 attachBottom:Boolean
+                 attachBottom:Boolean,
+                 canonicalOnly:Boolean,
+                 rightBranching:Boolean
                     ) : (Grammar, Probability) = {
     System.err.println(s"STARTED expectations")
     val t1 = System.currentTimeMillis()
     
-    val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom)
+    val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
     
     val t2 = System.currentTimeMillis()
     val period = t2 - t1

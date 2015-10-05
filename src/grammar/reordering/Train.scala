@@ -25,6 +25,10 @@ object Train {
       batchEM: Boolean = true,
       binarySplits: Int = 10,
       narySplits  : Int = 1,
+      maxTrainingDataSize : Int = 0,
+      maxSentLength : Int = 40,
+      maxAllowedArity: Int = 5,
+      useMinPhrases: Boolean = false,
       onlineBatchSize : Int = 10000,
       threadBatchSize : Int = 1000,
       hardEMbestK : Int = -1,
@@ -33,10 +37,12 @@ object Train {
       initGrammarFN : String = null,
       iterations : Int = 30,
       convergenceThreshold : Double = -1,
-      attachLeft  : Boolean = true,
+      attachLeft  : Boolean = false,
       attachRight : Boolean = true,
-      attachTop   : Boolean = true,
-      attachBottom: Boolean = true
+      attachTop   : Boolean = false,
+      attachBottom: Boolean = true,
+      canonicalOnly:Boolean = false,
+      rightBranching:Boolean = false
   )
   
   private val argumentParser = new scopt.OptionParser[Config]("ReorderingGrammar") {
@@ -67,6 +73,22 @@ object Train {
         c.copy(narySplits = x.toInt)
       }
       
+      opt[String]("maxTrainingDataSize") optional() action { (x, c) =>
+        c.copy(maxTrainingDataSize = x.toInt)
+      }
+
+      opt[String]("maxSentLength") optional() action { (x, c) =>
+        c.copy(maxSentLength = x.toInt)
+      }
+
+      opt[String]("maxAllowedArity") optional() action { (x, c) =>
+        c.copy(maxAllowedArity = x.toInt)
+      }
+
+      opt[Boolean]("useMinPhrases") optional() action { (x, c) =>
+        c.copy(useMinPhrases = x)
+      }
+
       opt[Int]('t', "threads") action { (x, c) =>
         c.copy(threads = x)
       }
@@ -89,6 +111,14 @@ object Train {
       
       opt[Boolean]("nullAttachBottom") action { (x, c) =>
         c.copy(attachBottom = x)
+      }
+      
+      opt[Boolean]("canonicalOnly") action { (x,c) =>
+        c.copy(canonicalOnly = x)
+      }
+      
+      opt[Boolean]("rightBranching") action { (x,c) =>
+        c.copy(rightBranching = x)
       }
       
       opt[Int]("hard_EM_best_K") action { (x, c) =>
@@ -137,9 +167,11 @@ object Train {
       attachLeft:Boolean,
       attachRight:Boolean,
       attachTop:Boolean,
-      attachBottom:Boolean) : Grammar = {
+      attachBottom:Boolean,
+      canonicalOnly:Boolean,
+      rightBranching:Boolean) : Grammar = {
     System.err.println("START creating init grammar")
-    val initG = InsideOutside.initialIteration(trainingData, attachLeft, attachRight, attachTop, attachBottom)
+    val initG = InsideOutside.initialIteration(trainingData, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
     initG.save(grammarOutputPrefix+"/nonSplittedGrammar", dephrased=false)
     System.err.println("DONE creating init grammar")
     System.err.println("START splitting init grammar")
@@ -188,20 +220,44 @@ object Train {
   
   private def loadSents(file: String) : List[String] = Source.fromFile(file).getLines().toList
   
-  private def filtering(oldData : List[(String, String, POSseq)]) : List[(String, String, POSseq)] = {
+  private def filtering(oldData : List[(String, String, POSseq)], maxAllowedArity:Int, maxTrainingDataSize:Int, maxSentLength:Int) : List[(String, String, POSseq)] = {
     System.err.println("STARTED filtering")
-    val maxAllowedArity = 5
     var processed = 0
-    val newData = oldData.filter{ case (_, alignment, _) =>
+    var accepted = 0
+    var newData = List[(String, String, POSseq)]()
+    
+    oldData.foreach{ case instance @ (sent, alignment, _) =>
       processed += 1
       if(processed % 10000 == 0){
         System.err.println(processed)
       }
-      val a = AlignmentCanonicalParser.extractAlignment(alignment)
-      val arity = Preprocessing.maxArity(a)
+      
+      if(maxTrainingDataSize <= 0 || accepted < maxTrainingDataSize){
+        val words = sent.split(" +")
+        if(words.size <= maxSentLength){
+          val a = AlignmentCanonicalParser.extractAlignment(alignment)
+          val arity = Preprocessing.maxArity(a)
+  
+          if(arity <= maxAllowedArity && Preprocessing.numAlignedWords(a) >=2){
+            newData ::= instance
+            accepted += 1
+          }
+        }
+      }
 
-      arity <= maxAllowedArity && Preprocessing.numAlignedWords(a) >=2
     }
+    newData = newData.reverse
+
+//    val newData = oldData.filter{ case (_, alignment, _) =>
+//      processed += 1
+//      if(processed % 10000 == 0){
+//        System.err.println(processed)
+//      }
+//      val a = AlignmentCanonicalParser.extractAlignment(alignment)
+//      val arity = Preprocessing.maxArity(a)
+//
+//      arity <= maxAllowedArity && Preprocessing.numAlignedWords(a) >=2
+//    }
     System.err.println("DONE filtering")
     System.err.println("kept "+newData.size+" out of "+oldData.size)
     
@@ -267,7 +323,27 @@ object Train {
       initGrammarFN.split("_").last.toInt+1
     }
   }
-  
+
+  private def makeAlignmentsOneToOne(aligns:List[String]) : (List[String]) = {
+    var newAligns = List[String]()
+    var processed = 0
+    val sentsCount = aligns.size
+
+    aligns.foreach{ align =>
+      val a:Set[(Int, Int)] = AlignmentCanonicalParser.extractAlignment(align)
+      
+      val newA:Set[(Int, Int)] = a.groupBy(_._1).mapValues(links => links.map{_._2}.min).toSet
+      
+      newAligns ::= newA.map{case (i, j) => s"$i-$j"}.mkString(" ")
+      processed += 1
+      if(processed % 1000 == 0){
+        System.err.println(s"$processed/$sentsCount phrase merging/alignment links filtering")
+      }
+    }
+    
+    newAligns.reverse
+  }
+
   private def mergePhrases(sents:List[String], aligns:List[String]) : (List[String], List[String]) = {
     var newSents = List[String]()
     var newAligns = List[String]()
@@ -284,10 +360,17 @@ object Train {
       newAligns ::= newA.map{case (i, j) => s"$i-$j"}.mkString(" ")
       processed += 1
       if(processed % 1000 == 0){
-        System.err.println(s"$processed/$sentsCount phrase merging")
+        System.err.println(s"$processed/$sentsCount phrase merging/alignment links filtering")
       }
     }
     (newSents.reverse, newAligns.reverse)
+  }
+  
+  def removeEmptyLines(x:List[String], y:List[String]) : (List[String], List[String]) = {
+    val filtered = (x zip y).filterNot{ case (xStr, yStr) =>
+      xStr.matches("^ *$") || yStr.matches("^ *$")
+    }
+    (filtered.map{_._1}, filtered.map{_._2})
   }
   
   def main(args: Array[String]): Unit = {
@@ -295,10 +378,15 @@ object Train {
       
       basicTests(config)
       val storage = config.outputPrefix 
-      val rawSentences : List[String] = loadSents(config.sourceFN)
-      val rawAlignments : List[String] = loadSents(config.alignmentFN)
+      // val rawSentences : List[String] = loadSents(config.sourceFN)
+      // val rawAlignments : List[String] = loadSents(config.alignmentFN)
+      val (rawSentences : List[String], rawAlignments : List[String]) = removeEmptyLines(loadSents(config.sourceFN), loadSents(config.alignmentFN))
       
-      val (phraseMergedSentences, phraseMergedAlignments) = mergePhrases(rawSentences, rawAlignments)
+      val (phraseMergedSentences, phraseMergedAlignments) = if(config.useMinPhrases){
+        mergePhrases(rawSentences, rawAlignments)
+      }else{
+        (rawSentences, makeAlignmentsOneToOne(rawAlignments))
+      }
 
       var trainingData : List[(String, String, POSseq)] = null
       var initGrammar  : Grammar = null
@@ -314,10 +402,10 @@ object Train {
           wordAsItselfSequence(srcSents)
         }
 
-        trainingData = filtering(Preprocessing.zip3(srcSents, phraseMergedAlignments, posSequences))
+        trainingData = filtering(Preprocessing.zip3(srcSents, phraseMergedAlignments, posSequences), config.maxAllowedArity, config.maxTrainingDataSize, config.maxSentLength)
         firstIterNumber = 0
 
-        initGrammar = makeInitGrammar(trainingData, storage, config.binarySplits, config.narySplits, config.threads, config.attachLeft, config.attachRight, config.attachTop, config.attachBottom)
+        initGrammar = makeInitGrammar(trainingData, storage, config.binarySplits, config.narySplits, config.threads, config.attachLeft, config.attachRight, config.attachTop, config.attachBottom, config.canonicalOnly, config.rightBranching)
       }else{
         initGrammar = Grammar.loadFromFile(config.initGrammarFN)
         firstIterNumber = firstIterationNumber(config.initGrammarFN)
@@ -331,7 +419,7 @@ object Train {
           wordAsItselfSequence(srcSents)
         }
         
-        trainingData = filtering(Preprocessing.zip3(srcSents, phraseMergedAlignments, posSequences))
+        trainingData = filtering(Preprocessing.zip3(srcSents, phraseMergedAlignments, posSequences), config.maxAllowedArity, config.maxTrainingDataSize, config.maxSentLength)
       }
       
       saveData(s"$storage/filteredSents", s"$storage/filteredAlignments", s"$storage/filteredPos", trainingData)
@@ -356,7 +444,9 @@ object Train {
             config.attachLeft,
             config.attachRight,
             config.attachTop,
-            config.attachBottom
+            config.attachBottom,
+            config.canonicalOnly,
+            config.rightBranching
             )
         System.err.println("DONE Batch EM training")
       }else{
@@ -376,7 +466,9 @@ object Train {
             config.attachLeft,
             config.attachRight,
             config.attachTop,
-            config.attachBottom
+            config.attachBottom,
+            config.canonicalOnly,
+            config.rightBranching
             )
         System.err.println("DONE Online EM training")
       }

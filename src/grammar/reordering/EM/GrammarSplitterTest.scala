@@ -18,8 +18,10 @@ class GrammarSplitterTest extends FlatSpec with ShouldMatchers{
     val attachRight = true
     val attachTop = true
     val attachBottom = true
+    val canonicalOnly = false
+    val rightBranching = false
     
-    val g = InsideOutside.initialIteration(List((sent, alignment, tags)), attachLeft, attachRight, attachTop, attachBottom)
+    val g = InsideOutside.initialIteration(List((sent, alignment, tags)), attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
 
     val g1 = GrammarSplitter.split(g, threads)
     
