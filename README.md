@@ -23,6 +23,17 @@ so it is also has its specialized parser for finding the best reordering of the 
 
 Naturally, it has a training phase and testing phase. Both of them are described bellow.
 
+# Compiling
+
+Ideally everything should work by just typing:
+```
+make jar
+```
+
+It will download all the necessary libraries and compilers and compile stuff.
+The only prerequisite is JDK 1.8.
+After compiling there will be jar file for Reordering Grammar (something like `rg_0.1.jar`) and lib directory with necessary libraries.
+
 # Training
 
 To use RG it is needed to add the jar file to the classpath (with `-cp` parameter for example) and then call the appropriate class.

@@ -46,10 +46,10 @@ $(LIB): $(SCALA_DIR)
 #
 	wget https://staff.fnwi.uva.nl/m.stanojevic/beer/beer_1.0.jar -O $(LIB)/beer_1.0.jar
 #
-	wget http://nlp.stanford.edu/software/phrasal/phrasal.3.4.1.tar.gz
-	tar xfvz phrasal*.tar.gz
-	rm phrasal*.tar.gz
-	mv phrasal* $(LIB)
+#	wget http://nlp.stanford.edu/software/phrasal/phrasal.3.4.1.tar.gz
+#	tar xfvz phrasal*.tar.gz
+#	rm phrasal*.tar.gz
+#	mv phrasal* $(LIB)
 
 jar: bin
 	echo "Manifest-Version: 1.0" > Manifest.txt
