@@ -8,6 +8,7 @@ import grammar.reordering.alignment.AlignmentCanonicalParser
 import grammar.reordering.alignment.AlignmentForestParserWithTags
 import grammar.reordering.parser.KBestExtractor
 import scala.util.Random
+import grammar.reordering.parser.SimpleTreeNode
 
 object InsideOutside {
   
@@ -177,24 +178,29 @@ object InsideOutside {
                  attachTop:Boolean,
                  attachBottom:Boolean,
                  canonicalOnly:Boolean,
-                 rightBranching:Boolean
-                    ) : (Map[Rule, Double], Probability) = {
+                 rightBranching:Boolean,
+                 extractTrees:Boolean,
+                 maxRuleProduct:Boolean,
+                 maxRuleSum:Boolean
+                    ) : (Map[Rule, Double], List[List[SimpleTreeNode]], Probability) = {
     g.voc.lock()
     val trainingBatches = if(threads>1){
-                            val l = trainingData.grouped(batchSize).toList.par
+                            val l = trainingData.zipWithIndex.grouped(batchSize).toList.par
                             l.tasksupport = 
                               new ForkJoinTaskSupport(new scala.concurrent.forkjoin.ForkJoinPool(threads))
                             l
                           }else{
-                            trainingData.grouped(batchSize).toList
+                            trainingData.zipWithIndex.grouped(batchSize).toList
                           }
     var processed = 0
     val veryBeginingTime = System.currentTimeMillis()
     var startTime = System.currentTimeMillis()
     val totalSentsToProcess = trainingData.size
 
-    val parallelExpectations = trainingBatches.map{ miniBatch:List[(String, String, POSseq)] =>
-      val miniBatchResults = miniBatch.map{ case (sent, alignment, posSequence) =>
+    val parallelExpectations:Seq[(scala.collection.Map[Rule, Double], List[(Int, List[SimpleTreeNode])], Probability)] = trainingBatches.map{ miniBatch =>
+      val miniBatchResults:Seq[(scala.collection.Map[Rule, Double], List[(Int, List[SimpleTreeNode])], Probability)] = miniBatch.map{ case ((sent:String, alignment:String, posSequence:POSseq), sentIndex:Int) =>
+        // System.err.println("processing sentence  \""+sent+"\"")
+        // System.err.println("processing alignment \""+alignment+"\"")
 
         val a = AlignmentCanonicalParser.extractAlignment(alignment)
         val s = sent.split(" +").toList
@@ -211,12 +217,18 @@ object InsideOutside {
   
         val chart:Chart = alignmentParser.parse(sent=s, a=a, tags=posSequence)
         
-        val (chartExpectations, sentProb) = if(hardEMtopK > 0){
-          this.computeHardExpectedCountPerChart(chart, g, randomness, hardEMtopK)
+        val (chartExpectations, trees, sentProb) = if(hardEMtopK > 0){
+          if(maxRuleProduct || maxRuleSum){
+            this.inside(chart, g)
+            this.outside(chart, g)
+          }
+          val (chartExpectations, trees, sentProb) = this.computeHardExpectedCountPerChart(chart, g, randomness, hardEMtopK, maxRuleProduct, maxRuleSum)
+          (chartExpectations, trees, sentProb)
         }else{
           this.inside(chart, g)
           this.outside(chart, g)
-          this.computeSoftExpectedCountPerChart(chart, g, randomness)
+          val (chartExpectations, sentProb) = this.computeSoftExpectedCountPerChart(chart, g, randomness)
+          (chartExpectations, List(), sentProb)
         }
         
         val n = chart.size
@@ -241,18 +253,19 @@ object InsideOutside {
         }
         processed += 1
 
-        (chartExpectations, sentProb)
+        (chartExpectations, List((sentIndex, trees)), sentProb)
       } // .reduce( (a:(scala.collection.Map[Rule, Double], Probability),b:(scala.collection.Map[Rule, Double], Probability)) => sumExpectations(a, b) )
-      val (a, b) = sumManyExpectations(miniBatchResults)
+      val (a, b, c) = sumManyExpectations(miniBatchResults)
       // (a.toMap, b)
-      (a, b)
+      (a, b, c)
     }.seq // .reduce( (a,b) => sumExpectations(a,b) )
     
     val (
         expectedCounts:scala.collection.Map[Rule, Double],
+        treebank:List[(Int, List[SimpleTreeNode])],
         allSplitLikelihood:Probability) = sumManyExpectations(parallelExpectations)
     
-    (expectedCounts.toMap.withDefaultValue(0.0), allSplitLikelihood)
+    (expectedCounts.toMap.withDefaultValue(0.0), treebank.map{_._2}, allSplitLikelihood)
   }
   
   def maximization(g:Grammar, expectedCounts:scala.collection.Map[Rule, Double]) : Grammar = {
@@ -296,10 +309,10 @@ object InsideOutside {
     newGrammar
   }
   
-  private def sumManyExpectations(toSum:Traversable[(scala.collection.Map[Rule, Double], Probability)]) : (scala.collection.Map[Rule, Double], Probability) = {
+  private def sumManyExpectations(toSum:Traversable[(scala.collection.Map[Rule, Double], List[(Int, List[SimpleTreeNode])], Probability)]) : (scala.collection.Map[Rule, Double], List[(Int, List[SimpleTreeNode])], Probability) = {
     val totalExp = scala.collection.mutable.Map[Rule, Double]()
     var totalLikelihood = LogOne
-    for((aExp, aLikelihood) <- toSum){
+    for((aExp, _, aLikelihood) <- toSum){
       totalLikelihood *= aLikelihood
       
       for((k, v) <- aExp){
@@ -307,7 +320,9 @@ object InsideOutside {
       }
     }
     
-    (totalExp, totalLikelihood)
+    val sortedTrees = toSum.toList.map{_._2}.flatten.sortBy(_._1)
+    
+    (totalExp, sortedTrees, totalLikelihood)
   }
 
   private def sumExpectations(
@@ -435,22 +450,48 @@ object InsideOutside {
     (ruleCountAcc, sentProb)
   }
   
-  def computeHardExpectedCountPerChart(chart:Chart, g:Grammar, randomness:Double, k:Int) : (scala.collection.Map[Rule, Double], Probability) = {
+  def computeHardExpectedCountPerChart(chart:Chart, g:Grammar, randomness:Double, k:Int, maxRuleProduct:Boolean, maxRuleSum:Boolean) : (scala.collection.Map[Rule, Double], List[SimpleTreeNode], Probability) = {
     val ruleCountAcc = scala.collection.mutable.Map[Rule, Double]().withDefaultValue(0.0)
     
-    val kBestTrees = KBestExtractor.extractKbest(g, chart, k)
+    val kBestTrees = KBestExtractor.extractKbest(g, chart, k, maxRuleProduct, maxRuleSum)
     
-    var sentProb = sum(kBestTrees.map{_.subTreeP})
-    for(tree <- kBestTrees){
+    val sentWeight = kBestTrees.map{ tree =>
+      if(maxRuleSum){
+        tree.subTreeScore
+      } else {
+        Math.exp(tree.subTreeScore)
+      }
+    }.sum
+
+    for((tree, index) <- kBestTrees.zipWithIndex){
+      val treeWeight = if(maxRuleSum){
+                         tree.subTreeScore
+                       } else {
+                         Math.exp(tree.subTreeScore)
+                       }
+      System.err.print("rank="+index+" ")
+      System.err.print("rawScore="+tree.subTreeScore+" ")
+      System.err.print("weight="+treeWeight+" ")
+      // System.err.print("exp(score)="+Math.exp(tree.subTreeScore)+" ")
+      // System.err.print("log(score)="+Math.log(tree.subTreeScore)+" ")
+      System.err.print(tree.toPennString())
+      System.err.println()
+
       val rules = tree.extractRules(g)
       rules.foreach{ rule =>
-        val partialExpectation:Double = (tree.subTreeP/sentProb).toDouble
+        val partialExpectation:Double = treeWeight/sentWeight
         val noize = Random.nextDouble()*partialExpectation*randomness/100
         ruleCountAcc(rule) += partialExpectation+noize
       }
     }
     
-    (ruleCountAcc, sentProb)
+    val totalSentenceScore = if(sentWeight>1){
+      LogOne
+    }else{
+      Probability(sentWeight)
+    }
+    
+    (ruleCountAcc, kBestTrees, totalSentenceScore)
   }
   
 }

@@ -68,6 +68,7 @@ class SimpleTreeNodeTest extends FlatSpec with ShouldMatchers{
     val grammarStorageDir = "batch_EM_grammars"
       
     val hardEMtopK = 0
+    val hardEMiterStart = 0
     val randomness = 0.0
     
     val attachLeft = true
@@ -76,11 +77,13 @@ class SimpleTreeNodeTest extends FlatSpec with ShouldMatchers{
     val attachBottom = true
     val canonicalOnly = false
     val rightBranching = false
+    val maxRuleProduct = false
+    val maxRuleSum     = false
     
     val gInit = InsideOutside.initialIteration(trainingData, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
     val gSplit = GrammarSplitter.split(gInit, threads)
       
-    val g = BatchEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize, randomness, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
+    val g = BatchEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize, randomness, hardEMtopK, hardEMiterStart, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching, maxRuleProduct, maxRuleSum)
     
     
     val a = AlignmentCanonicalParser.extractAlignment(alignments.head)
@@ -91,7 +94,7 @@ class SimpleTreeNodeTest extends FlatSpec with ShouldMatchers{
     val chart:Chart = alignmentParser.parse(sent=s, a=a, tags=trainingData.head._3)
 
     val k = 2
-    val kBestTrees = KBestExtractor.extractKbest(g, chart, k)
+    val kBestTrees = KBestExtractor.extractKbest(g, chart, k, maxRuleProduct, maxRuleSum)
     
     val node1 = kBestTrees.head
     val node2 = kBestTrees.tail.head
@@ -112,7 +115,7 @@ class SimpleTreeNodeTest extends FlatSpec with ShouldMatchers{
       println(rule.toString(g.voc, g.nonTerms))
     }
     
-    val (expectations, sentProb) = InsideOutside.computeHardExpectedCountPerChart(chart, g, randomness, k)
+    val (expectations, trees, sentProb) = InsideOutside.computeHardExpectedCountPerChart(chart, g, randomness, k, maxRuleProduct, maxRuleSum)
     println(s"sentProb: $sentProb")
     println("Hard expectations :")
     println(expectations.map{ case (rule:Rule, count:Double) =>

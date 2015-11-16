@@ -48,11 +48,13 @@ class KBestExtractorTest extends FlatSpec with ShouldMatchers{
     println(s"\ttook $period")
 
     val k = 3
+    val maxRuleProduct = false
+    val maxRuleSum = false
 
     print("nbest extraction")
     t1 = System.currentTimeMillis()
     // val result = KBestExtractor.extractKbest(g, delatentizedChart, k)
-    val result = KBestExtractor.extractKbest(g, rebalancedChart, k)
+    val result = KBestExtractor.extractKbest(g, rebalancedChart, k, maxRuleProduct, maxRuleSum)
     t2 = System.currentTimeMillis()
     period = t2 - t1
     println(s"\ttook $period")
@@ -61,13 +63,13 @@ class KBestExtractorTest extends FlatSpec with ShouldMatchers{
     // AlignmentCanonicalParser.visualizeTree(result.head._1, "rank="+i+"/"+result.size+" p="+result.head._2.toDouble)
     result.take(k).foreach{ weightedTree:SimpleTreeNode =>
       println(weightedTree.toPennString(sent))
-      val graphLabel = "rank="+i+"/"+result.size+" p="+weightedTree.subTreeP.toDouble
+      val graphLabel = "rank="+i+"/"+result.size+" p="+Math.exp(weightedTree.subTreeScore)
       weightedTree.visualize(sent, graphLabel)
       // AlignmentCanonicalParser.visualizeTree(weightedTree._1, sent, "rank="+i+"/"+result.size+" p="+weightedTree._2.toDouble)
-      println("rank="+i+"/"+result.size+" p="+weightedTree.subTreeP.toDouble)
+      println("rank="+i+"/"+result.size+" p="+Math.exp(weightedTree.subTreeScore))
       i+=1
     }
-    println("total = "+result.map{_.subTreeP.toDouble}.sum)
+    println("total = "+result.map{tree => Math.exp(tree.subTreeScore)}.sum)
     
     // val quasiPerm = Yield.treeToPermutation(result.head._1)
     // val betterPerm = Yield.filterOutUnaligned(quasiPerm)

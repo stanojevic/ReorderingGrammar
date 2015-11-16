@@ -9,8 +9,8 @@ import grammar.reordering.representation.Grammar
 
 case class SimpleTreeNode (
     label:String,
-    p:Probability,
-    subTreeP:Probability,
+    score:Double, // by default it's log of probability but it can be something else too
+    subTreeScore:Double,
     children:List[SimpleTreeNode],
     span:(Int, Int)
     ) {
@@ -113,19 +113,31 @@ case class SimpleTreeNode (
     }
   }
   
-  def toPennString(sent:List[String], depth:Int=0) : String = {
+  def toPennString(sent:List[String]=null, depth:Int=0, printDephrased:Boolean=false) : String = {
     if(children.size == 0){
-      SimpleTreeNode.escapeBrackets(sent(span._1))
+      val bigPhrase = if(sent == null) this.label else sent(span._1)
+      val output = if(bigPhrase.startsWith("[[[") && bigPhrase.endsWith("]]]") && bigPhrase.contains("___")){
+        bigPhrase.substring(3, bigPhrase.length-3).split("___").map(SimpleTreeNode.escapeBrackets).mkString(" ")
+      }else{
+        SimpleTreeNode.escapeBrackets(bigPhrase)
+      }
+      output
     }else{
       val childrenString = children.map{_.toPennString(sent, depth+1)}.mkString(" ")
       "("+SimpleTreeNode.escapeBrackets(label)+" "+childrenString+")"
     }
   }
   
-  def toPennStringIndented(sent:List[String], depth:Int=0) : String = {
+  def toPennStringIndented(sent:List[String]=null, depth:Int=0) : String = {
     val indentation = "  "*depth
     if(span._1 == span._2){
-      indentation+sent(span._1)
+      val bigPhrase = if(sent == null) this.label else sent(span._1)
+      val output = if(bigPhrase.startsWith("[[[") && bigPhrase.endsWith("]]]") && bigPhrase.contains("___")){
+        bigPhrase.substring(3, bigPhrase.length-3).split("___").map(SimpleTreeNode.escapeBrackets).mkString(" ")
+      }else{
+        SimpleTreeNode.escapeBrackets(bigPhrase)
+      }
+      indentation+output
     }else{
       val childrenString = children.map{_.toPennStringIndented(sent, depth+1)}.mkString("\n")
       indentation+"("+label+"\n"+childrenString+")"
@@ -250,10 +262,12 @@ case class SimpleTreeNode (
       }else if(children(0).children.size == 0){
         val lhs = g.nonTerms(label)
         val word = g.voc(children(0).label)
+        val p = if(score > 0) Probability (score) else new Probability(score)
         memoizedRules = List(PretermRule(lhs, word, p))
       }else{
         val lhs = g.nonTerms(label)
         val rhs = children.map{kid:SimpleTreeNode => g.nonTerms(kid.label)}
+        val p = if(score > 0) Probability (score) else new Probability(score)
         val rule = InnerRule(lhs, rhs, p)
         val subRules = children.flatMap{_.extractRules(g)}
         memoizedRules = rule::subRules
@@ -271,7 +285,7 @@ case class SimpleTreeNode (
     }else{
       this.children.map{child => child.deuniarize}
     }
-    SimpleTreeNode(this.label, this.p, this.subTreeP, newChildren, this.span)
+    SimpleTreeNode(this.label, this.score, this.subTreeScore, newChildren, this.span)
   }
   
   def flatten() : SimpleTreeNode = {
@@ -300,7 +314,7 @@ case class SimpleTreeNode (
       }
       newChildren = newChildren.map{_.flatten}
       
-      SimpleTreeNode(opLabel, this.p, this.subTreeP, newChildren, this.span)
+      SimpleTreeNode(opLabel, this.score, this.subTreeScore, newChildren, this.span)
     }
   }
 
@@ -331,8 +345,8 @@ object SimpleTreeNode {
       
       val node = SimpleTreeNode(
         label = unescapeBrackets(label),
-        p = LogOne,
-        subTreeP = LogOne,
+        score = LogOne.log,
+        subTreeScore = LogOne.log,
         children = children,
         span = (spanStart, children.last.span._2)
       )
@@ -341,8 +355,8 @@ object SimpleTreeNode {
       val label = tokens.head
       val node = SimpleTreeNode(
         label = unescapeBrackets(label),
-        p = LogOne,
-        subTreeP = LogOne,
+        score = LogOne.log,
+        subTreeScore = LogOne.log,
         children = List(),
         span = (spanStart, spanStart)
       )

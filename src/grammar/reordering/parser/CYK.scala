@@ -233,6 +233,9 @@ object CYK {
             nts.removeEdge(edge)
           case _ =>
         }
+        if(nts.edges.isEmpty){
+          pruningIt2.remove()
+        }
       }
     }
   }

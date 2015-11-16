@@ -45,6 +45,11 @@ $(LIB): $(SCALA_DIR)
 	rm -rf 3.1a1/ trove*
 #
 	wget https://staff.fnwi.uva.nl/m.stanojevic/beer/beer_1.0.jar -O $(LIB)/beer_1.0.jar
+#
+	wget http://nlp.stanford.edu/software/phrasal/phrasal.3.4.1.tar.gz
+	tar xfvz phrasal*.tar.gz
+	rm phrasal*.tar.gz
+	mv phrasal* $(LIB)
 
 jar: bin
 	echo "Manifest-Version: 1.0" > Manifest.txt
@@ -58,8 +63,12 @@ bin:
 	mkdir -p bin
 	$(SCALA_COMPILER) -d bin -classpath `find lib -name \*.jar| tr "\n" :` `find src -name \*.scala`
 
+package:
+	rm -f rg_$(RG_VERSION).tar.gz
+	tar -zcvf rg_$(RG_VERSION).tar.gz $(LIB)/*.jar *.jar
+
 deploy: jar
-	scp -r lib *.jar rg_0.1.jar mstanoj1@laco10.science.uva.nl:/home/mstanoj1/experiments/ACL14_reordering/en_ja/playground/s.install_reordering_grammarian.b8a76e71.20150115-0315/rg
+	scp -r $(LIB) *.jar rg_0.1.jar mstanoj1@laco10.science.uva.nl:/home/mstanoj1/experiments/ACL14_reordering/en_ja/playground/s.install_reordering_grammarian.b8a76e71.20150115-0315/rg
 #scp -r lib *.jar rg_0.1.jar mstanoj1@laco9.science.uva.nl:/home/mstanoj1/experiments/ACL14_reordering/de-en/playground/s.install_reordering_grammarian.da0fe160.20150212-1925/rg
 
 

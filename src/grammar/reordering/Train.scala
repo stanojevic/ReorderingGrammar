@@ -19,6 +19,9 @@ object Train {
   private case class Config(
       sourceFN : String = "",
       alignmentFN : String = "",
+      everythingIsFiltered : Boolean = false,
+      maxRuleProduct : Boolean = false,
+      maxRuleSum     : Boolean = false,
       wordClassFile : String = null,
       outputPrefix : String = "",
       threads: Int = 1,
@@ -32,6 +35,7 @@ object Train {
       onlineBatchSize : Int = 10000,
       threadBatchSize : Int = 1000,
       hardEMbestK : Int = -1,
+      hardEMiterStart : Int = -1,
       randomnessInEstimation : Double = 0.0,
       onlineAlpha:Double = 0.6,
       initGrammarFN : String = null,
@@ -55,6 +59,18 @@ object Train {
       
       opt[String]('a', "alignmentsFile") required() action { (x, c) =>
         c.copy(alignmentFN = x)
+      }
+      
+      opt[Boolean]("everythingIsFiltered") action { (x, c) =>
+        c.copy(everythingIsFiltered = x)
+      }
+      
+      opt[Boolean]("maxRuleProduct") action { (x, c) =>
+        c.copy(maxRuleProduct = x)
+      }
+      
+      opt[Boolean]("maxRuleSum") action { (x, c) =>
+        c.copy(maxRuleSum = x)
       }
       
       opt[String]('c', "wordClassFile") action { (x, c) =>
@@ -124,6 +140,10 @@ object Train {
       opt[Int]("hard_EM_best_K") action { (x, c) =>
         c.copy(hardEMbestK = x)
       } text ("How many Kbest for hard EM iterations (first iteration is always soft EM; for <=0 only soft EM will be used always)")
+      
+      opt[Int]("hard_EM_iter_start") action { (x, c) =>
+        c.copy(hardEMiterStart = x)
+      } text ("After which iteration hard EM starts")
       
       opt[Double]("randomnessInEstimation") action { (x, c) =>
         c.copy(randomnessInEstimation = x)
@@ -203,6 +223,10 @@ object Train {
   }
     
   private def basicTests(config:Config) : Unit = {
+    if(config.maxRuleProduct && config.maxRuleSum){
+      System.err.println("It is not possible to use maxRuleProduct and maxRuleSum together")
+      System.exit(-1)
+    }
     if(! new File(config.sourceFN).exists()){
       System.err.println("Source sents file "+config.sourceFN+" doesn't exist")
       System.exit(-1)
@@ -278,6 +302,16 @@ object Train {
     srcPW.close()
   }
   
+  private def loadData(srcFN:String, alignFN:String, posFN:String) : List[(String, String, POSseq)] = {
+    val srcSents = loadSents(srcFN)
+    val alignments = loadSents(alignFN)
+    val poss:List[POSseq] = loadSents(posFN).map{ posLine:String =>
+      posLine.substring(5, posLine.size-1).split(", ").toList.map{pos:String => Map(pos -> 1.0)}
+    }
+    Preprocessing.zip3(srcSents, alignments, poss)
+  }
+
+  
   private def wordAsItselfSequence(srcSents:List[String]) : List[POSseq] = {
     srcSents.map{ sent =>
       sent.split(" +").map{ word =>
@@ -318,7 +352,7 @@ object Train {
   
   private def firstIterationNumber(initGrammarFN:String) : Int = {
     if(initGrammarFN == null || initGrammarFN == ""){
-      0
+      1
     }else{
       initGrammarFN.split("_").last.toInt+1
     }
@@ -378,48 +412,72 @@ object Train {
       
       basicTests(config)
       val storage = config.outputPrefix 
-      // val rawSentences : List[String] = loadSents(config.sourceFN)
-      // val rawAlignments : List[String] = loadSents(config.alignmentFN)
-      val (rawSentences : List[String], rawAlignments : List[String]) = removeEmptyLines(loadSents(config.sourceFN), loadSents(config.alignmentFN))
       
-      val (phraseMergedSentences, phraseMergedAlignments) = if(config.useMinPhrases){
-        mergePhrases(rawSentences, rawAlignments)
-      }else{
-        (rawSentences, makeAlignmentsOneToOne(rawAlignments))
-      }
-
       var trainingData : List[(String, String, POSseq)] = null
       var initGrammar  : Grammar = null
-      var firstIterNumber = 0
+      val firstIterNumber = firstIterationNumber(config.initGrammarFN)
       
       if(config.initGrammarFN == null){
         // we are not continuing previous training but starting from scrach
+        
+      
+        // STEP 1 load raw sentences and filer for empty lines
+        val (rawSentences : List[String], rawAlignments : List[String]) = removeEmptyLines(loadSents(config.sourceFN), loadSents(config.alignmentFN))
+        
+        // STEP 2 merge minimal phrases
+        val (phraseMergedSentences, phraseMergedAlignments) = if(config.useMinPhrases){
+          mergePhrases(rawSentences, rawAlignments)
+        }else{
+          (rawSentences, makeAlignmentsOneToOne(rawAlignments))
+        }
+
+        // STEP 3 PREPROCESS THE SENTS
         val srcSents     : List[String] = Preprocessing.prepareTrainingDataForUnknownWords(phraseMergedSentences)
         
+        // STEP 4 POS TAGS
         val posSequences : List[POSseq] = if(config.wordClassFile != null) {
           wordClassSequence(srcSents, phraseMergedAlignments, config.wordClassFile)
         }else{
           wordAsItselfSequence(srcSents)
         }
 
+        // STEP 5 ARITY FILTER
         trainingData = filtering(Preprocessing.zip3(srcSents, phraseMergedAlignments, posSequences), config.maxAllowedArity, config.maxTrainingDataSize, config.maxSentLength)
-        firstIterNumber = 0
 
+        // STEP 6 INIT GRAMMAR CREATION
         initGrammar = makeInitGrammar(trainingData, storage, config.binarySplits, config.narySplits, config.threads, config.attachLeft, config.attachRight, config.attachTop, config.attachBottom, config.canonicalOnly, config.rightBranching)
       }else{
-        initGrammar = Grammar.loadFromFile(config.initGrammarFN)
-        firstIterNumber = firstIterationNumber(config.initGrammarFN)
-        
-        System.err.println("filtering by grammar; RETHINK this if you are training on different data now")
-        val srcSents     : List[String] = Preprocessing.prepareDataForUnknownWordsGivenGrammar(phraseMergedSentences, initGrammar)
 
-        val posSequences : List[POSseq] = if(config.wordClassFile != null) {
-          wordClassSequence(srcSents, phraseMergedAlignments, config.wordClassFile)
-        }else{
-          wordAsItselfSequence(srcSents)
-        }
+        // STEP 1 LOAD GRAMMAR
+        initGrammar = Grammar.loadFromFile(config.initGrammarFN)
         
-        trainingData = filtering(Preprocessing.zip3(srcSents, phraseMergedAlignments, posSequences), config.maxAllowedArity, config.maxTrainingDataSize, config.maxSentLength)
+        if(config.everythingIsFiltered){
+          trainingData = loadData(config.sourceFN, config.alignmentFN, config.wordClassFile)
+        }else{
+          // STEP 2 load raw sentences and filer for empty lines
+          val (rawSentences : List[String], rawAlignments : List[String]) = removeEmptyLines(loadSents(config.sourceFN), loadSents(config.alignmentFN))
+        
+          // STEP 3 merge minimal phrases
+          val (phraseMergedSentences, phraseMergedAlignments) = if(config.useMinPhrases){
+            mergePhrases(rawSentences, rawAlignments)
+          }else{
+            (rawSentences, makeAlignmentsOneToOne(rawAlignments))
+          }
+
+          // STEP 4 PREPROCESS THE SENTS
+          System.err.println("filtering by grammar; RETHINK this if you are training on different data now")
+          val srcSents     : List[String] = Preprocessing.prepareDataForUnknownWordsGivenGrammar(phraseMergedSentences, initGrammar)
+
+          // STEP 5 POS TAGS
+          val posSequences : List[POSseq] = if(config.wordClassFile != null) {
+            wordClassSequence(srcSents, phraseMergedAlignments, config.wordClassFile)
+          }else{
+            wordAsItselfSequence(srcSents)
+          }
+        
+          // STEP 6 FILTERING
+          trainingData = filtering(Preprocessing.zip3(srcSents, phraseMergedAlignments, posSequences), config.maxAllowedArity, config.maxTrainingDataSize, config.maxSentLength)
+        }
       }
       
       saveData(s"$storage/filteredSents", s"$storage/filteredAlignments", s"$storage/filteredPos", trainingData)
@@ -441,12 +499,15 @@ object Train {
             config.threadBatchSize,
             config.randomnessInEstimation,
             config.hardEMbestK,
+            config.hardEMiterStart,
             config.attachLeft,
             config.attachRight,
             config.attachTop,
             config.attachBottom,
             config.canonicalOnly,
-            config.rightBranching
+            config.rightBranching,
+            config.maxRuleProduct,
+            config.maxRuleSum
             )
         System.err.println("DONE Batch EM training")
       }else{

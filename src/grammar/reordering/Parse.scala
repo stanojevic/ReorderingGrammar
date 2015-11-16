@@ -24,6 +24,8 @@ object Parse {
     kToMBR      : Int     =   10000,
     kToOutput   : Int     =       1,
     doSampling  : Boolean =    true,
+    maxRuleProduct : Boolean = false,
+    maxRuleSum : Boolean = false,
     
     lambdaPruning: Double = 0.1,
     grammarPruning: Double = 0.05,
@@ -79,6 +81,14 @@ object Parse {
       c.copy(doSampling = x)
     }
 
+    opt[Boolean]("maxRuleProduct") action { (x, c) =>
+      c.copy(maxRuleProduct = x)
+    }
+
+    opt[Boolean]("maxRuleSum") action { (x, c) =>
+      c.copy(maxRuleSum = x)
+    }
+
     opt[Double]("lambdaPruning") action { (x, c) =>
       c.copy(lambdaPruning = x)
     } text ("bigger lambda means more pruning; lambda = 0 means no pruning ; lambda < 0 means fixed beam of size int(-lambda)")
@@ -116,6 +126,8 @@ object Parse {
       System.err.println("STARTED AT "+startDate.toString())
 
       val lambda = config.lambdaPruning
+      val maxRuleProduct = config.maxRuleProduct
+      val maxRuleSum = config.maxRuleSum
 
       val sents = loadSentences(config.sentencesFN)
       val g = loadGrammar(config.grammarFN, config.grammarPruning)
@@ -172,7 +184,7 @@ object Parse {
             val rawResult: List[SimpleTreeNode] = if(config.doSampling){
               Sampling.sampleBestFlatTrees(g, chart, config.kToExtract)
             }else{
-              KBestExtractor.extractKbest(g, chart, config.kToExtract)
+              KBestExtractor.extractKbest(g, chart, config.kToExtract, maxRuleProduct, maxRuleSum)
             }
             val time_sampling_end = System.currentTimeMillis()
             val period_sampling = (time_sampling_end - time_sampling_start)/1000
@@ -219,7 +231,7 @@ object Parse {
             System.err.println("flushing output")
             val sent = sents(i).split(" +").toList
             trees.zipWithIndex.foreach { case (tree: SimpleTreeNode, rank: Int) => 
-              val weight = tree.subTreeP
+              val weight = new Probability(tree.subTreeScore)
               if (quasiPermPW != null) {
                 val quasiPerm = tree.yieldPermutationWithUnaligned()
                 quasiPermPW.print(s"sent $i rank $rank prob $weight ||| ")

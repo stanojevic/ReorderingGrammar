@@ -45,6 +45,9 @@ class CYKTest extends FlatSpec with ShouldMatchers{
     val attachBottom = true
     val canonicalOnly = false
     val rightBranching = false
+    val extractTreebank = false
+    val maxRuleProduct = false
+    val maxRuleSum = false
     
     val gInit = InsideOutside.initialIteration(trainingData, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
 
@@ -54,7 +57,7 @@ class CYKTest extends FlatSpec with ShouldMatchers{
     val kBestHardEM = 0
     
     for(i <- 1 to 10){
-      val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, kBestHardEM, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
+      val (expectedCounts, treebank, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, kBestHardEM, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching, extractTreebank, maxRuleProduct, maxRuleSum)
       g = InsideOutside.maximization(g, expectedCounts)
       println(s"iteration $i $likelihood")
     }
@@ -114,9 +117,12 @@ class CYKTest extends FlatSpec with ShouldMatchers{
 
     val randomness = 0.0
     val kBestHardEM = 0
+    val extractTreebank = false
+    val maxRuleProduct = false
+    val maxRuleSum = false
     
     for(i <- 1 to 10){
-      val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, kBestHardEM, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
+      val (expectedCounts, treebank, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, kBestHardEM, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching, extractTreebank, maxRuleProduct, maxRuleSum)
       g = InsideOutside.maximization(g, expectedCounts)
       println(s"iteration $i $likelihood")
     }

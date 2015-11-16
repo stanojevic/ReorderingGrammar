@@ -10,6 +10,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import grammar.reordering.alignment.PhrasePairExtractor
 import grammar.reordering.alignment.AlignmentForestParserWithTags
+import grammar.reordering.parser.SimpleTreeNode
+import java.io.PrintWriter
 
 object BatchEM {
 
@@ -23,12 +25,15 @@ object BatchEM {
                  threadBatchSize:Int,
                  randomness:Double,
                  hardEMtopK:Int,
+                 hardEMiterStart:Int,
                  attachLeft:Boolean,
                  attachRight:Boolean,
                  attachTop:Boolean,
                  attachBottom:Boolean,
                  canonicalOnly:Boolean,
-                 rightBranching:Boolean
+                 rightBranching:Boolean,
+                 maxRuleProduct:Boolean,
+                 maxRuleSum:Boolean
                     ) : Grammar = {
     var initCounts = Map[Rule, Double]()
     for(rule <- initG.allRules){
@@ -49,19 +54,27 @@ object BatchEM {
       System.err.println(s"Iteration $it started at $date")
       System.err.println()
 
-      val result = if(it>0){
+      var extractTreebank = false
+      val result = if(it >= hardEMiterStart){
         if(hardEMtopK > 0){
+          extractTreebank = true
           System.err.println("HARD-EM iteration")
         }else{
+          extractTreebank = false
           System.err.println("SOFT-EM iteration")
         }
-        iteration(trainingData, currentG, threadBatchSize, threads, randomness, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
+        iteration(trainingData, currentG, threadBatchSize, threads, randomness, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching, extractTreebank, maxRuleProduct, maxRuleSum)
       }else{
         System.err.println("SOFT-EM iteration")
-        iteration(trainingData, currentG, threadBatchSize, threads, randomness, -1, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
+        iteration(trainingData, currentG, threadBatchSize, threads, randomness, -1, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching, extractTreebank, maxRuleProduct, maxRuleSum)
       }
       currentG = result._1
-      currentLikelihood = result._2
+      val treebank = result._2
+      if(extractTreebank){
+        saveTreebank(output+"/treebank_"+it, (treebank zip trainingData.map{_._1}), dephrased=false)
+        saveTreebank(output+"/treebank_"+it+".dephrased", (treebank zip trainingData.map{_._1}), dephrased=true)
+      }
+      currentLikelihood = result._3
       
       currentG.save(output+"/grammar_"+it, dephrased=false)
       // val dePhrasedGrammar = PhrasePairExtractor.unfoldGrammarOfIdioms(currentG)
@@ -69,7 +82,11 @@ object BatchEM {
       currentG.save(output+"/grammar_"+it+".dephrased", dephrased=true)
       val perplexityPerWord = Math.exp(-currentLikelihood.log/wordCount)
       System.err.println()
-      System.err.println(s"Grammar $it: likelihood $currentLikelihood")
+      if(maxRuleSum && it >= hardEMiterStart){
+        System.err.println(s"Grammar $it: likelihood $currentLikelihood DON'T TRUST THIS NUMBER MUCH")
+      }else{
+        System.err.println(s"Grammar $it: likelihood $currentLikelihood")
+      }
       System.err.println(s"Grammar $it: Perplexity per word $perplexityPerWord")
       System.err.println()
       
@@ -77,6 +94,32 @@ object BatchEM {
     }while( ! stoppingCriteria(prevLikelihood, currentLikelihood, it))
       
     currentG
+  }
+  
+  private def saveTreebank(fnOut:String, treebank : List[(List[SimpleTreeNode], String)], dephrased:Boolean) : Unit = {
+    val fn = if(new File(fnOut).exists()){
+      System.err.println(s"$fnOut already exists!")
+
+      val ft = new SimpleDateFormat ("_HH:mm_dd.MM.yyyy")
+      val newFN = fnOut+ft.format(new Date())
+      System.err.println(s"I'll save to $newFN instead")
+      newFN
+    }else{
+      fnOut
+    }
+    System.err.println(s"STARTED saving the grammar at $fn")
+    val pw = new PrintWriter(fn)
+    
+    treebank.zipWithIndex.foreach{ case ((trees, sent), index) =>
+      val words = sent.split(" ").toList
+      trees.zipWithIndex.foreach{ case (tree, rank) =>
+        pw.print(s"sent=$index rank=$rank ")
+        pw.print(tree.toPennString(words, printDephrased=dephrased))
+        pw.println()
+      }
+    }
+    
+    pw.close()
   }
   
   private def iteration(
@@ -91,19 +134,22 @@ object BatchEM {
                  attachTop:Boolean,
                  attachBottom:Boolean,
                  canonicalOnly:Boolean,
-                 rightBranching:Boolean
-                    ) : (Grammar, Probability) = {
+                 rightBranching:Boolean,
+                 extractTreebank:Boolean,
+                 maxRuleProduct:Boolean,
+                 maxRuleSum:Boolean
+                    ) : (Grammar, List[List[SimpleTreeNode]], Probability) = {
     System.err.println(s"STARTED expectations")
     val t1 = System.currentTimeMillis()
     
-    val (expectedCounts, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
+    val (expectedCounts, treebank, likelihood) = InsideOutside.expectation(trainingData, g, batchSize, threads, randomness, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching, extractTreebank, maxRuleProduct, maxRuleSum)
     
     val t2 = System.currentTimeMillis()
     val period = t2 - t1
     System.err.println(s"DONE expectations took $period ms")
 
     val newGrammar = InsideOutside.maximization(g, expectedCounts)
-    (newGrammar, likelihood)
+    (newGrammar, treebank, likelihood)
   }
 
 }

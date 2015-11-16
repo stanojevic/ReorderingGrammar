@@ -19,15 +19,17 @@ object KBestExtractor {
   
   type BestChart = Array[Array[TIntObjectHashMap[Array[SimpleTreeNode]]]]
 
-  private val orderingTN = Ordering.by({n:SimpleTreeNode => n.subTreeP.toDouble})
+  private val orderingTN = Ordering.by({n:SimpleTreeNode => Math.exp(n.subTreeScore)})
   
   private type Vector = List[Int]
   private type SimpleTreeNodeVectorized = (SimpleTreeNode, Vector)
-  private val orderingTNvectorized = Ordering.by({n:SimpleTreeNodeVectorized => n._1.subTreeP.toDouble})
+  private val orderingTNvectorized = Ordering.by({n:SimpleTreeNodeVectorized => Math.exp(n._1.subTreeScore)})
   
-  def extractKbest(g:Grammar, chart:Chart, k:Int) : List[SimpleTreeNode] = {
+  def extractKbest(g:Grammar, chart:Chart, k:Int, maxRuleProduct:Boolean, maxRuleSum:Boolean) : List[SimpleTreeNode] = {
     val n = chart.size
     val bestChart : BestChart = Array.fill(n, n)(new TIntObjectHashMap[Array[SimpleTreeNode]]())
+    
+    val sentExpectation = chart(0)(n-1).get(g.ROOT).inside
     
     // process preterms
     for(i <- 0 until n){
@@ -39,9 +41,19 @@ object KBestExtractor {
         var bestK = List[SimpleTreeNode]()
         for(edge <- nonTermSpan.edges){
           edge.rule match {
-            case PretermRule(lhs, word, prob) =>
-              val wordNode = SimpleTreeNode(g.voc(word), LogOne, LogOne, List(), (i, i))
-              val pretermNode = SimpleTreeNode(g.nonTerms(lhs), prob, prob, List(wordNode), (i, i))
+            case PretermRule(lhs, word, origProb) =>
+
+              val ruleExpectation = nonTermSpan.outside*edge.inside
+              val score:Double = if(maxRuleProduct){
+                (ruleExpectation/sentExpectation).log
+              } else if(maxRuleSum){
+                (ruleExpectation/sentExpectation).toDouble()
+              } else {
+                origProb.log
+              }
+
+              val wordNode = SimpleTreeNode(g.voc(word), LogOne.toDouble, LogOne.toDouble, List(), (i, i))
+              val pretermNode = SimpleTreeNode(g.nonTerms(lhs), score, score, List(wordNode), (i, i))
               bestK = merge(k, bestK, List(pretermNode))
             case _ =>
           }
@@ -58,7 +70,15 @@ object KBestExtractor {
         val nonTermSpan = it.value()
         for(edge <- nonTermSpan.edges){
           if(edge.rule.isInstanceOf[InnerRule]){
-            processEdge(edge, chart, bestChart, g, k)
+            val ruleExpectation = nonTermSpan.outside*edge.inside
+            val score:Double = if(maxRuleProduct){
+              (ruleExpectation/sentExpectation).log
+            } else if(maxRuleSum){
+              (ruleExpectation/sentExpectation).toDouble
+            } else {
+              edge.rule.prob.log
+            }
+            processEdge(edge, score, chart, bestChart, g, k)
           }
         }
       }
@@ -69,27 +89,37 @@ object KBestExtractor {
       for(i <- 0 until n-span+1){
         val j = i + span - 1
 
-        var unaryEdges = List[Edge]()
-        var naryEdges  = List[Edge]()
+        var unaryEdges = List[(Edge, Double)]()
+        var naryEdges  = List[(Edge, Double)]()
         val it = chart(i)(j).iterator()
         while(it.hasNext()){
           it.advance()
           val nonTermSpan = it.value()
+          
           for(edge <- nonTermSpan.edges){
+            val ruleExpectation = nonTermSpan.outside*edge.inside
+            val score = if(maxRuleProduct){
+              (ruleExpectation/sentExpectation).log
+            } else if (maxRuleSum){
+              (ruleExpectation/sentExpectation).toDouble
+            } else {
+              edge.rule.prob.log
+            }
             if(edge.splits.size == 0){
-              unaryEdges ::= edge
+              unaryEdges ::= (edge, score)
             }else{
-              naryEdges  ::= edge
+              naryEdges  ::= (edge, score)
             }
           }
         }
+        
     
-        for(edge <- naryEdges){
-          processEdge(edge, chart, bestChart, g, k)
+        for((edge, score) <- naryEdges){
+          processEdge(edge, score, chart, bestChart, g, k)
         }
         
-        for(edge <- unaryEdges){
-          processEdge(edge, chart, bestChart, g, k)
+        for((edge, score) <- unaryEdges){
+          processEdge(edge, score, chart, bestChart, g, k)
         }
       }
     }
@@ -101,7 +131,7 @@ object KBestExtractor {
     }
   }
   
-  private def processEdge(edge:Edge, chart:Chart, bestChart:BestChart, g:Grammar, k:Int) : Unit = {
+  private def processEdge(edge:Edge, score:Double, chart:Chart, bestChart:BestChart, g:Grammar, k:Int) : Unit = {
     val start = edge.start
     val end = edge.end
     val lhs = edge.rule.lhs
@@ -109,7 +139,6 @@ object KBestExtractor {
     val arity = rule.rhs.size
     val spans = edge.children
     val candidates = spans.map{case (i, j, nt) => bestChart(i)(j).get(nt)}.toArray
-    val prob = edge.rule.prob
     
     val C:PriorityQueue[SimpleTreeNodeVectorized] = PriorityQueue.empty(orderingTNvectorized)
     var enqueued = scala.collection.mutable.Set[List[Int]]()
@@ -120,7 +149,7 @@ object KBestExtractor {
     val children:List[SimpleTreeNode] = (0 until arity).map{ childOrder =>
       candidates(childOrder)(0)
     }.toList
-    val firstVecNode = constructTreeNode(g, start, end, rule, children, initVec)
+    val firstVecNode = constructTreeNode(g, start, end, score, rule, children, initVec)
     C.enqueue(firstVecNode)
     enqueued += firstVecNode._2
     
@@ -132,7 +161,7 @@ object KBestExtractor {
       edgeBestK ::= pop._1
       edgeBestKsize += 1
       
-      val allNeighbours = neighbours(start, end, rule, candidates, pop._2, g)
+      val allNeighbours = neighbours(start, end, score, rule, candidates, pop._2, g)
       
       allNeighbours.foreach{ neigh =>
         if(! enqueued.contains(neigh._2)){
@@ -151,13 +180,14 @@ object KBestExtractor {
       g:Grammar,
       i:Int,
       j:Int,
+      score:Double,
       rule:InnerRule,
       children:List[SimpleTreeNode],
       vec:Vector) : SimpleTreeNodeVectorized = {
     val node = SimpleTreeNode(
       g.nonTerms(rule.lhs),
-      rule.prob,
-      rule.prob*product(children.map{_.subTreeP}),
+      score,
+      score+children.map{_.subTreeScore}.sum,
       children,
       (i, j)
     )
@@ -187,6 +217,7 @@ object KBestExtractor {
   private def neighbours(
       start:Int,
       end:Int,
+      score:Double,
       rule:InnerRule,
       candidates:Array[Array[SimpleTreeNode]],
       vector:List[Int],
@@ -198,7 +229,7 @@ object KBestExtractor {
       vec(i) += 1
       retrieve(candidates, vec) match {
         case Some(children) =>
-          res ::= constructTreeNode(g, start, end, rule, children, vec.toList)
+          res ::= constructTreeNode(g, start, end, score, rule, children, vec.toList)
         case None =>
       }
       vec(i) -= 1

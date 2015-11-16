@@ -64,9 +64,12 @@ class BatchEMTest extends FlatSpec with ShouldMatchers {
     val grammarStorageDir = "batch_EM_grammars"
       
     val hardEMtopK = -1
+    val hardEMiterStart = -1
     val randomness = 0.0
+    val maxRuleProduct = false
+    val maxRuleSum = false
       
-    BatchEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize, randomness, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
+    BatchEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize, randomness, hardEMtopK, hardEMiterStart, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching, maxRuleProduct, maxRuleSum)
   }
 
 }

@@ -14,7 +14,7 @@ object MBR {
     
     for(tree <- list){
       val features = metricFunc.extractFeatureCountsRef(tree).withDefaultValue(0.0)
-      val prob     = tree.subTreeP.toDouble
+      val prob     = Math.exp(tree.subTreeScore)
       for((featureName, value) <- features){
         expectations(featureName) += prob*value
       }
@@ -45,7 +45,7 @@ object MBR {
       var expectedScore = 0.0
       for(ref_j <- 0 until list.size){
         val metricScore = metricFunc.score(list(sys_i), list(ref_j))
-        expectedScore += list(ref_j).subTreeP.toDouble * metricScore
+        expectedScore += Math.exp(list(ref_j).subTreeScore) * metricScore
       }
       result ::= (list(sys_i), expectedScore)
     }
@@ -59,10 +59,10 @@ object MBR {
   }
   
   private def renormalizeProbs(list: List[SimpleTreeNode]) : List[SimpleTreeNode] = {
-    val total = list.map{_.subTreeP.toDouble}.sum
+    val total = list.map{tree => Math.exp(tree.subTreeScore)}.sum
     list.map{ tree =>
-      val newP = Probability(tree.subTreeP.toDouble/total)
-      new SimpleTreeNode(tree.label, newP, newP, tree.children, tree.span)
+      val newP = Probability(Math.exp(tree.subTreeScore)/total)
+      new SimpleTreeNode(tree.label, newP.log, newP.log, tree.children, tree.span)
     }
   }
 

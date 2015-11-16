@@ -112,13 +112,13 @@ class AlignmentForestParserWithTags (
                 val rhss1:Traversable[NonTerm] = if(splitPoint == criticalLeftSplit){
                   spannedChildrenWithAllowedNonTerms.head._2
                 }else{
-                  latentLhss // it's the same as rhs in this case
+                  latentLhss.filter { nonTerm => !beSafeBecauseOfPruning || chart(spanStart)(splitPoint-1).containsKey(nonTerm) } // it's the same as rhs in this case
                 }
                 
                 val rhss2:Traversable[NonTerm] = if(splitPoint == criticalRightSplit){
                   spannedChildrenWithAllowedNonTerms.last._2
                 }else{
-                  latentLhss // it's the same as rhs in this case
+                  latentLhss.filter { nonTerm => !beSafeBecauseOfPruning || chart(splitPoint)(spanEnd).containsKey(nonTerm) } // it's the same as rhs in this case
                 }
                 
                 val allowedChildrenNTs = List(rhss1, rhss2)
@@ -192,9 +192,11 @@ class AlignmentForestParserWithTags (
         }
     }
 
-    fakeRhs = fakeRhs.reverse
-    val rule = InnerRule(latentMotherLhs, fakeRhs, LogOne)
-    newNaryEdges ::= Edge(start, end, rule, splitPoints)
+    if(!newUnaryEdges.isEmpty){
+      fakeRhs = fakeRhs.reverse
+      val rule = InnerRule(latentMotherLhs, fakeRhs, LogOne)
+      newNaryEdges ::= Edge(start, end, rule, splitPoints)
+    }
 
     newUnaryEdges ++ newNaryEdges
   }

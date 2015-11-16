@@ -41,8 +41,8 @@ object MBRfromSample {
       val tree = SimpleTreeNode.fromPennString(things(2))
       val realTree = SimpleTreeNode (
         tree.label,
-        Probability(prob),
-        tree.subTreeP,
+        Math.log(prob),
+        tree.subTreeScore,
         tree.children,
         tree.span
       )

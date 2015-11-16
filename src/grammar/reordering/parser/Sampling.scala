@@ -33,15 +33,15 @@ object Sampling {
     var results = List[SimpleTreeNode]()
     for((k, v) <- samples){
       val prob = Probability(v/total)
-      val newNode = SimpleTreeNode(k.label, prob, prob, k.children, k.span)
+      val newNode = SimpleTreeNode(k.label, prob.log, prob.log, k.children, k.span)
       results ::= newNode
     }
     
-    val sortedResults = results.sortBy(_.subTreeP.toDouble).reverse
+    val sortedResults = results.sortBy(tree => Math.exp(tree.subTreeScore)).reverse
     
     System.err.println("min count: "+samples.values.min+" min prob: "+(samples.values.min/total))
     System.err.println("max count: "+samples.values.max+" max prob: "+(samples.values.max/total))
-    System.err.println("best sorted prob : "+sortedResults.head.subTreeP)
+    System.err.println("best sorted prob : "+Math.exp(sortedResults.head.subTreeScore))
     val mean = samples.values.sum.toDouble/samples.size
     val variance = samples.values.map{ x => Math.pow(x-mean, 2) }.sum / samples.size
     val stddev = Math.sqrt(variance)
@@ -76,11 +76,11 @@ object Sampling {
     
     selectedEdge.rule match {
       case PretermRule(lhs, word, prob) =>
-        val wordNode = SimpleTreeNode(g.voc(word), LogOne, LogOne, List(), (i, j))
-        SimpleTreeNode(g.nonTerms(lhs), LogOne, LogOne, List(wordNode), (i, j))
+        val wordNode = SimpleTreeNode(g.voc(word), LogOne.log, LogOne.log, List(), (i, j))
+        SimpleTreeNode(g.nonTerms(lhs), LogOne.log, LogOne.log, List(wordNode), (i, j))
       case InnerRule(lhs, rhs, prob) =>
         val subSamples = selectedEdge.children.map{ case (start, end, nt) => sampleTreeRec(g, chart, start, end, nt)}
-        SimpleTreeNode(g.nonTerms(lhs), LogOne, LogOne, subSamples, (i, j))
+        SimpleTreeNode(g.nonTerms(lhs), LogOne.log, LogOne.log, subSamples, (i, j))
     }
   }
 
