@@ -92,7 +92,7 @@ Parameter                      | Description
 --threads 30                   | how many CPUs to use for training
 --threadBatchSize 100          | how big are the batches for each thread (100 is a reasonable setting)
 --iterations 10                | how many iterations in total (both soft and hard EM)
---wordClassFile pos_tagged     | NOT TESTED file with POS tags that would be used as preterminals (each word of the source file replaced by its pos tag/cluster id)
+--wordClassFile classFile      | NOT TESTED file with word/class mappings (output of mkcls) in case you want to use Brown clusters as preterminals
 --maxTrainingDataSize 10000000 | filtering argument for amount of training sentences to be used
 --maxSentLength 50             | filtering argument for maximum sentence length
 --maxAllowedArity 5            | filtering argument for maximum arity that is supported (don't try >5)
