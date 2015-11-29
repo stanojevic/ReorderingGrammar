@@ -25,14 +25,15 @@ Naturally, it has a training phase and testing phase. Both of them are described
 
 # Compiling
 
-Ideally everything should work by just typing:
+Ideally everything should compile by just typing:
 ```
-make jar
+make
 ```
 
 It will download all the necessary libraries and compilers and compile stuff.
 The only prerequisite is JDK 1.8.
 After compiling there will be jar file for Reordering Grammar (something like `rg_0.1.jar`) and lib directory with necessary libraries.
+There will also be archive `ReorderingGrammarian_0.1.tar.gz` which contains compressed all the necessary files for running ReorderingGrammarian.
 
 # Training
 

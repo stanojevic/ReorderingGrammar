@@ -2,11 +2,10 @@ LIB=lib
 RG_VERSION=0.1
 
 SCALA_VERSION=2.11.2
-https://oss.sonatype.org/content/groups/public/org/scalatest/scalatest_2.11/2.2.1/scalatest_2.11-2.2.1.jar
 SCALA_DIR=scala_compiler
 SCALA_COMPILER=./$(SCALA_DIR)/bin/scalac
 
-beer: lib dist
+ReorderingGrammar: package
 
 $(SCALA_DIR):
 	wget http://downloads.typesafe.com/scala/$(SCALA_VERSION)/scala-$(SCALA_VERSION).tgz -O scala.tgz
@@ -39,19 +38,15 @@ $(LIB): $(SCALA_DIR)
 #
 	wget https://oss.sonatype.org/content/groups/public/org/scalatest/scalatest_2.11/2.2.1/scalatest_2.11-2.2.1.jar -O $(LIB)/scalatest_2.11-2.2.1.jar
 #
-	wget https://bitbucket.org/robeden/trove/downloads/trove-3.1a1.zip
+	wget https://bitbucket.org/trove4j/trove/downloads/trove-3.1a1.zip
 	unzip trove-3.1a1.zip
 	mv 3.1a1/lib/trove-*.jar $(LIB)
 	rm -rf 3.1a1/ trove*
 #
 	wget https://staff.fnwi.uva.nl/m.stanojevic/beer/beer_1.0.jar -O $(LIB)/beer_1.0.jar
 #
-#	wget http://nlp.stanford.edu/software/phrasal/phrasal.3.4.1.tar.gz
-#	tar xfvz phrasal*.tar.gz
-#	rm phrasal*.tar.gz
-#	mv phrasal* $(LIB)
 
-jar: bin
+jar: $(LIB) bin
 	echo "Manifest-Version: 1.0" > Manifest.txt
 	echo Class-Path: `find ./$(LIB) -name \*.jar | tr "\n" " "` >> Manifest.txt
 	echo Main-Class: grammar.reordering.Train >> Manifest.txt
@@ -63,9 +58,9 @@ bin:
 	mkdir -p bin
 	$(SCALA_COMPILER) -d bin -classpath `find lib -name \*.jar| tr "\n" :` `find src -name \*.scala`
 
-package:
-	rm -f rg_$(RG_VERSION).tar.gz
-	tar -zcvf rg_$(RG_VERSION).tar.gz $(LIB)/*.jar *.jar
+package: jar $(LIB)
+	rm -f ReorderingGrammarian_$(RG_VERSION).tar.gz
+	tar -zcvf ReorderingGrammarian_$(RG_VERSION).tar.gz $(LIB)/*.jar *.jar
 
 deploy: jar
 	scp -r $(LIB) *.jar rg_0.1.jar mstanoj1@laco10.science.uva.nl:/home/mstanoj1/experiments/ACL14_reordering/en_ja/playground/s.install_reordering_grammarian.b8a76e71.20150115-0315/rg
