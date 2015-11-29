@@ -242,8 +242,12 @@ object Train {
     }
     val storageDir = new File(config.outputPrefix)
     if( ! storageDir.isDirectory()){
-      System.err.println("Output should be an existing directory")
-      System.exit(-1)
+      if(storageDir.exists()){
+        System.err.println("Output dir should be an existing DIRECTORY and not a file")
+        System.exit(-1)
+      }else{
+        storageDir.mkdir()
+      }
     }
   }
   

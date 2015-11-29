@@ -225,7 +225,7 @@ object InsideOutside {
           val debug_maxRuleProduct = false
           val debug_maxRuleSum     = true
           val kBestTrees = KBestExtractor.extractKbest(g, chart, debug_k, debug_maxRuleProduct, debug_maxRuleSum)
-          kBestTrees.foreach { tree => System.err.println("sentence " + sentIndex + " " + tree.toPennStringIndented()) }
+          kBestTrees.foreach { tree => System.err.println("\nsentence " + sentIndex + " " + tree.toPennStringIndented(s)) }
         }
 
         val (chartExpectations, trees, sentProb) = if(hardEMtopK > 0){

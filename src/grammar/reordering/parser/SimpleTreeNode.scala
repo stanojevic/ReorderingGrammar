@@ -130,7 +130,7 @@ case class SimpleTreeNode (
   
   def toPennStringIndented(sent:List[String]=null, depth:Int=0) : String = {
     val indentation = "  "*depth
-    if(span._1 == span._2){
+    if(children.size == 0){
       val bigPhrase = if(sent == null) this.label else sent(span._1)
       val output = if(bigPhrase.startsWith("[[[") && bigPhrase.endsWith("]]]") && bigPhrase.contains("___")){
         bigPhrase.substring(3, bigPhrase.length-3).split("___").map(SimpleTreeNode.escapeBrackets).mkString(" ")
