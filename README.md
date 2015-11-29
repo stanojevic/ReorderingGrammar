@@ -88,7 +88,7 @@ Parameter                      | Description
 --maxRuleSum true              | NOT TESTED should treebank extraction (or hard-EM) be based on maxRuleSum
 --maxRuleProduct false         | NOT TESTED should treebank extraction (or hard-EM) be based on maxRuleProduct
 --hard_EM_best_K 1             | how many derivations to extract for hard-EM or treebank output
---hard_EM_iter_start 11        | on which iteration does hard-EM kick in (usually the last iteration, if at all)
+--extractTreebankInFinalIter   | in last iteration instead of soft-EM use hard-EM over least risky edges and extract treebank with those
 --threads 30                   | how many CPUs to use for training
 --threadBatchSize 100          | how big are the batches for each thread (100 is a reasonable setting)
 --iterations 10                | how many iterations in total (both soft and hard EM)
@@ -126,8 +126,10 @@ filteredAlignments           | --||-- from alignments
 filteredPos                  | --||-- from pos tags
 nonSplittedGrammar           | Initial version of the grammar before training (without splits)
 initGrammar                  | Initial version of the grammar before training (with splits)
-grammar_${i}                 | grammar after iteration ${i} (if minPhrases are used then each minPhrase is a fake word in this grammar)
-grammar_${i}.dephrased       | --||-- except that fake words that are minPhrases are expanded to be proper rules. This is the grammar you should use in test phase
+grammar_${i}.temporary       | grammar after iteration ${i} (if minPhrases are used then each minPhrase is a fake word in this grammar)
+grammar_${i}.final           | --||-- except that fake words that are minPhrases are expanded to be proper rules. This is the grammar you should use in test phase
+treebank_${i}.temporary      | temporary treebank after final iteration ${i} in case parameter `extractTreebankInLastIter` was set to true
+treebank_${i}.final          | final treebank after final iteration ${i} in case parameter `extractTreebankInLastIter` was set to true
 
 **Note that the file names might change in the future**
 
@@ -158,7 +160,7 @@ java -Xmx200G -cp rg*.jar grammar.reordering.Parse \
 Parameter                                  | Description
 ------------------------------------------ | ----------------------------
 --sentencesFile corpus.src                 | sentences to preorder
---grammarFile grammar.dephrased            | learned grammar
+--grammarFile grammar.final                | learned grammar
 --outPermutedStringFN out.PermutedString   | preordered source sentences
 --outTreeFN out.Tree                       | output best derivations for each sentence
 --outQuasiPermFN out.QuasiPerm             | output the permutations (unaligned words are represented by their index - 10000)

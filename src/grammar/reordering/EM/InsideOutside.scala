@@ -217,16 +217,21 @@ object InsideOutside {
   
         val chart:Chart = alignmentParser.parse(sent=s, a=a, tags=posSequence)
         
+        this.inside(chart, g)
+        this.outside(chart, g)
+
+        if(sentIndex % 1000 == 1){
+          val debug_k = 1
+          val debug_maxRuleProduct = false
+          val debug_maxRuleSum     = true
+          val kBestTrees = KBestExtractor.extractKbest(g, chart, debug_k, debug_maxRuleProduct, debug_maxRuleSum)
+          kBestTrees.foreach { tree => System.err.println("sentence " + sentIndex + " " + tree.toPennStringIndented()) }
+        }
+
         val (chartExpectations, trees, sentProb) = if(hardEMtopK > 0){
-          if(maxRuleProduct || maxRuleSum){
-            this.inside(chart, g)
-            this.outside(chart, g)
-          }
           val (chartExpectations, trees, sentProb) = this.computeHardExpectedCountPerChart(chart, g, randomness, hardEMtopK, maxRuleProduct, maxRuleSum)
           (chartExpectations, trees, sentProb)
         }else{
-          this.inside(chart, g)
-          this.outside(chart, g)
           val (chartExpectations, sentProb) = this.computeSoftExpectedCountPerChart(chart, g, randomness)
           (chartExpectations, List(), sentProb)
         }

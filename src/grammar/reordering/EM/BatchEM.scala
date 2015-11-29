@@ -24,8 +24,8 @@ object BatchEM {
                  threads:Int,
                  threadBatchSize:Int,
                  randomness:Double,
+                 extractTreebankInLastIter:Boolean,
                  hardEMtopK:Int,
-                 hardEMiterStart:Int,
                  attachLeft:Boolean,
                  attachRight:Boolean,
                  attachTop:Boolean,
@@ -54,35 +54,35 @@ object BatchEM {
       System.err.println(s"Iteration $it started at $date")
       System.err.println()
 
-      var extractTreebank = false
-      val result = if(it >= hardEMiterStart){
+      var extractTreebankNow = false
+      val result = if(stoppingCriteria(prevLikelihood, currentLikelihood, it+1)){
         if(hardEMtopK > 0){
-          extractTreebank = true
+          extractTreebankNow = true
           System.err.println("HARD-EM iteration")
         }else{
-          extractTreebank = false
+          extractTreebankNow = false
           System.err.println("SOFT-EM iteration")
         }
-        iteration(trainingData, currentG, threadBatchSize, threads, randomness, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching, extractTreebank, maxRuleProduct, maxRuleSum)
+        iteration(trainingData, currentG, threadBatchSize, threads, randomness, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching, extractTreebankNow, maxRuleProduct, maxRuleSum)
       }else{
         System.err.println("SOFT-EM iteration")
-        iteration(trainingData, currentG, threadBatchSize, threads, randomness, -1, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching, extractTreebank, maxRuleProduct, maxRuleSum)
+        iteration(trainingData, currentG, threadBatchSize, threads, randomness, -1, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching, extractTreebankNow, maxRuleProduct, maxRuleSum)
       }
       currentG = result._1
       val treebank = result._2
-      if(extractTreebank){
-        saveTreebank(output+"/treebank_"+it, (treebank zip trainingData.map{_._1}), dephrased=false)
-        saveTreebank(output+"/treebank_"+it+".dephrased", (treebank zip trainingData.map{_._1}), dephrased=true)
+      if(extractTreebankNow){
+        saveTreebank(output+"/treebank_"+it+".temporary", (treebank zip trainingData.map{_._1}), dephrased=false)
+        saveTreebank(output+"/treebank_"+it+".final", (treebank zip trainingData.map{_._1}), dephrased=true)
       }
       currentLikelihood = result._3
       
-      currentG.save(output+"/grammar_"+it, dephrased=false)
+      currentG.save(output+"/grammar_"+it+".temporary", dephrased=false)
       // val dePhrasedGrammar = PhrasePairExtractor.unfoldGrammarOfIdioms(currentG)
       // dePhrasedGrammar.save(output+"/grammar_"+it+".dephrased")
-      currentG.save(output+"/grammar_"+it+".dephrased", dephrased=true)
+      currentG.save(output+"/grammar_"+it+".final", dephrased=true)
       val perplexityPerWord = Math.exp(-currentLikelihood.log/wordCount)
       System.err.println()
-      if(maxRuleSum && it >= hardEMiterStart){
+      if(maxRuleSum && extractTreebankNow){
         System.err.println(s"Grammar $it: likelihood $currentLikelihood DON'T TRUST THIS NUMBER MUCH")
       }else{
         System.err.println(s"Grammar $it: likelihood $currentLikelihood")

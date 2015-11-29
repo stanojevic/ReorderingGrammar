@@ -68,7 +68,7 @@ class SimpleTreeNodeTest extends FlatSpec with ShouldMatchers{
     val grammarStorageDir = "batch_EM_grammars"
       
     val hardEMtopK = 0
-    val hardEMiterStart = 0
+    val extractTreebank = true
     val randomness = 0.0
     
     val attachLeft = true
@@ -83,7 +83,7 @@ class SimpleTreeNodeTest extends FlatSpec with ShouldMatchers{
     val gInit = InsideOutside.initialIteration(trainingData, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching)
     val gSplit = GrammarSplitter.split(gInit, threads)
       
-    val g = BatchEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize, randomness, hardEMtopK, hardEMiterStart, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching, maxRuleProduct, maxRuleSum)
+    val g = BatchEM.runTraining(stoppingCriteria, grammarStorageDir, trainingData, gSplit, 0, threads, miniBatchSize, randomness, extractTreebank, hardEMtopK, attachLeft, attachRight, attachTop, attachBottom, canonicalOnly, rightBranching, maxRuleProduct, maxRuleSum)
     
     
     val a = AlignmentCanonicalParser.extractAlignment(alignments.head)

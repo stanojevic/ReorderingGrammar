@@ -21,7 +21,7 @@ object Train {
       alignmentFN : String = "",
       everythingIsFiltered : Boolean = false,
       maxRuleProduct : Boolean = false,
-      maxRuleSum     : Boolean = false,
+      maxRuleSum     : Boolean = true,
       wordClassFile : String = null,
       outputPrefix : String = "",
       threads: Int = 1,
@@ -34,8 +34,9 @@ object Train {
       useMinPhrases: Boolean = false,
       onlineBatchSize : Int = 10000,
       threadBatchSize : Int = 1000,
+      extractTreebank : Boolean = true,
       hardEMbestK : Int = -1,
-      hardEMiterStart : Int = -1,
+      // hardEMiterStart : Int = -1,
       randomnessInEstimation : Double = 0.0,
       onlineAlpha:Double = 0.6,
       initGrammarFN : String = null,
@@ -137,13 +138,17 @@ object Train {
         c.copy(rightBranching = x)
       }
       
+      opt[Boolean]("extractTreebankInLastIter") action { (x, c) =>
+        c.copy(extractTreebank = x)
+      } text ("in laste iteration instead of soft-EM do hard-EM over least risky edges and extract least risky treebank")
+      
       opt[Int]("hard_EM_best_K") action { (x, c) =>
         c.copy(hardEMbestK = x)
-      } text ("How many Kbest for hard EM iterations (first iteration is always soft EM; for <=0 only soft EM will be used always)")
+      } text ("How many least risky trees to extract for the treebank (if extractTreebank==true) and use for final hard-EM iteration")
       
-      opt[Int]("hard_EM_iter_start") action { (x, c) =>
-        c.copy(hardEMiterStart = x)
-      } text ("After which iteration hard EM starts")
+      // opt[Int]("hard_EM_iter_start") action { (x, c) =>
+      //   c.copy(hardEMiterStart = x)
+      // } text ("After which iteration hard EM starts")
       
       opt[Double]("randomnessInEstimation") action { (x, c) =>
         c.copy(randomnessInEstimation = x)
@@ -498,8 +503,8 @@ object Train {
             config.threads,
             config.threadBatchSize,
             config.randomnessInEstimation,
+            config.extractTreebank,
             config.hardEMbestK,
-            config.hardEMiterStart,
             config.attachLeft,
             config.attachRight,
             config.attachTop,
