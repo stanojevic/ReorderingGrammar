@@ -66,11 +66,11 @@ java -Xmx200G -cp rg*.jar grammar.reordering.Train \
               \
               --maxRuleSum true \
               --hard_EM_best_K 1 \
-              --hard_EM_iter_start 11 \
+              --extractTreebankInFinalIter true \
               \
               --threads 30 \
               --threadBatchSize 100 \
-              --iterations 10
+              --iterations 11
 ```
 
 
