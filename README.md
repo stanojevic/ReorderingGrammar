@@ -66,7 +66,7 @@ java -Xmx200G -cp rg*.jar grammar.reordering.Train \
               \
               --maxRuleSum true \
               --hard_EM_best_K 1 \
-              --extractTreebankInFinalIter true \
+              --extractTreebankInLastIter true \
               \
               --threads 30 \
               --threadBatchSize 100 \
@@ -89,7 +89,7 @@ Parameter                      | Description
 --maxRuleSum true              | NOT TESTED should treebank extraction (or hard-EM) be based on maxRuleSum
 --maxRuleProduct false         | NOT TESTED should treebank extraction (or hard-EM) be based on maxRuleProduct
 --hard_EM_best_K 1             | how many derivations to extract for hard-EM or treebank output
---extractTreebankInFinalIter   | in last iteration instead of soft-EM use hard-EM over least risky edges and extract treebank with those
+--extractTreebankInLastIter   | in last iteration instead of soft-EM use hard-EM over least risky edges and extract treebank with those
 --threads 30                   | how many CPUs to use for training
 --threadBatchSize 100          | how big are the batches for each thread (100 is a reasonable setting)
 --iterations 10                | how many iterations in total (both soft and hard EM)
