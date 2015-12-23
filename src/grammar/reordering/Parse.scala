@@ -197,11 +197,11 @@ object Parse {
 
             val result = mbrResult.map{_._1}
 
-            if(result.size == 0){
+            if(mbrResult.size == 0){
               System.err.println(s"FAILED to parse sent $i of length "+sent.size)
             }else{
               System.err.println(s"SUCCESS to parse sent $i of length "+sent.size)
-              System.err.println(result.head.toPennString(sent))
+              System.err.println(mbrResult.head._1.toPennString(sent))
             }
 
             processed += 1
@@ -225,45 +225,51 @@ object Parse {
               System.err.println()
               startTime = newTime
             }
-            ((result.take(config.kToOutput), featureExpectations), i)
+            ((mbrResult.take(config.kToOutput), featureExpectations), i)
         }.toList.sortBy(_._2).foreach {
-          case ((trees: List[SimpleTreeNode], featureExpectations:Map[String, Double]), i: Int) => {
+          case ((trees: List[(SimpleTreeNode, Double)], featureExpectations:Map[String, Double]), i: Int) => {
             System.err.println("flushing output")
             val sent = sents(i).split(" +").toList
-            trees.zipWithIndex.foreach { case (tree: SimpleTreeNode, rank: Int) => 
-              val weight = new Probability(tree.subTreeScore)
+            trees.zipWithIndex.foreach { case ((tree: SimpleTreeNode, expectation:Double), rank: Int) => 
+              val weight = tree.subTreeScore
+              val expWeight = Math.exp(tree.subTreeScore)
               if (quasiPermPW != null) {
                 val quasiPerm = tree.yieldPermutationWithUnaligned()
-                quasiPermPW.print(s"sent $i rank $rank prob $weight ||| ")
+                quasiPermPW.print(s"sent $i rank $rank expectation $expectation weight $weight expWeight $expWeight ||| ")
                 quasiPermPW.println(quasiPerm.mkString(" "))
                 quasiPermPW.flush()
               }
               if (permutedStringPW != null) {
                 val permutedString = tree.yieldReorderedWithUnaligned(sent)
-                permutedStringPW.print(s"sent $i rank $rank prob $weight ||| ")
+                permutedStringPW.print(s"sent $i rank $rank expectation $expectation weight $weight expWeight $expWeight ||| ")
                 permutedStringPW.println(permutedString.mkString(" "))
                 permutedStringPW.flush()
               }
               if (treePW != null) {
                 val pennTree = tree.toPennString(sent)
-                treePW.print(s"sent $i rank $rank prob $weight ||| ")
+                treePW.print(s"sent $i rank $rank expectation $expectation weight $weight expWeight $expWeight ||| ")
                 treePW.println(pennTree)
                 treePW.flush()
               }
-              if (expectedKendallPW != null) {
-                val n = sent.size
-                var stringsToOut = List[String]()
-                for(i <- 0 until n-1){
-                  for(j <- i+1 until n){
-                    val riskA = featureExpectations(s"$i, $j")
+            }
+
+            if (expectedKendallPW != null) {
+              val n = sent.size
+              var stringsToOut = List[String]()
+              for(i <- 0 until n-1){
+                for(j <- i+1 until n){
+                  val riskA = featureExpectations(s"$i, $j")
+                  if(riskA != 0.0){
                     stringsToOut ::= s"$i:$j:$riskA"
-                    val riskB = featureExpectations(s"$j, $i")
+                  }
+                  val riskB = featureExpectations(s"$j, $i")
+                  if(riskB != 0.0){
                     stringsToOut ::= s"$j:$i:$riskB"
                   }
                 }
-                expectedKendallPW.println(stringsToOut.mkString(" "))
-                expectedKendallPW.flush()
               }
+              expectedKendallPW.println(stringsToOut.mkString(" "))
+              expectedKendallPW.flush()
             }
           }
         }

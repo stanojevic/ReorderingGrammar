@@ -30,9 +30,9 @@ Ideally everything should compile by just typing:
 make
 ```
 
-It will download all the necessary libraries and compilers and compile stuff.
-The only prerequisite is JDK 1.8.
-After compiling there will be jar file for Reordering Grammar (something like `rg_0.1.jar`) and lib directory with necessary libraries.
+It will download all the necessary libraries and compilers and compile stuff. <br />
+The only prerequisite is JDK 1.8. <br />
+After compiling there will be jar file for Reordering Grammar (something like `rg_0.1.jar`) and lib directory with necessary libraries. <br />
 There will also be archive `ReorderingGrammarian_0.1.tar.gz` which contains compressed all the necessary files for running ReorderingGrammarian.
 
 # Training
@@ -145,6 +145,7 @@ java -Xmx200G -cp rg*.jar grammar.reordering.Parse \
               --outPermutedStringFN out.PermutedString \
               --outTreeFN out.Tree \
               --outQuasiPermFN out.QuasiPerm \
+              --outExpectedKendallFN out.KendallTabler \
               \
               --kToExtract 10000 \
               --kToMBR 10000 \
@@ -165,6 +166,7 @@ Parameter                                  | Description
 --outPermutedStringFN out.PermutedString   | preordered source sentences
 --outTreeFN out.Tree                       | output best derivations for each sentence
 --outQuasiPermFN out.QuasiPerm             | output the permutations (unaligned words are represented by their index - 10000)
+--outExpectedKendallFN out.KendallTable    | output the skip bigram expectations
 --kToExtract 10000                         | size of the sample
 --kToMBR 10000                             | size of the subset of the sample that will be used for MBR
 --kToOutput 1                              | how many least risky derivations to print out

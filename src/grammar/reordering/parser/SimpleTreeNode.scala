@@ -150,11 +150,16 @@ case class SimpleTreeNode (
         "P21" -> "firebrick1"
     ).withDefaultValue("blue")
     val shapeMapping = Map[String, String](
+        "ROOT" -> "ellipse",
         "P12" -> "ellipse",
         "P21" -> "hexagon",
         "P10" -> "ellipse",
-        "P01" -> "ellipse"
-    ).withDefaultValue("")
+        "P01" -> "ellipse",
+        "P3142" -> "ellipse",
+        "P2413" -> "ellipse",
+        "P35142" -> "ellipse",
+        "P24153" -> "ellipse"
+    ).withDefaultValue("plaintext")
 
     val terminalColor = "lightblue2"
   
@@ -165,11 +170,13 @@ case class SimpleTreeNode (
       var terms = List[String]()
       
       outStr += nodeId+"[label=<<B>"+node.label+"</B>>; "
-      outStr += "shape="+shapeMapping(parts(0))+"; "
+      val shape = if(parts(0) startsWith "tag_") "square" else shapeMapping(parts(0))
+      outStr += "shape="+shape+"; "
       // outStr += "fontcolor="+colorMapping(parts(0))+"; "
       outStr += "color="+colorMapping(parts(0))+"; "
       // outStr += "fontname=\"Times-Bold\" ; "
-      outStr += "fontsize=30; "
+      val fontSize = if(parts(0) contains "*") 10 else 30
+      outStr += "fontsize="+fontSize+"; "
       outStr += "style=bold];\n"
       node.children.zipWithIndex.foreach{ case (child, index) =>
         val childName = nodeId+"_"+index
