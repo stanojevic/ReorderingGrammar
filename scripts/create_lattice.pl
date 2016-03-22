@@ -1,14 +1,14 @@
 #!/usr/bin/perl -w
 use strict;
 
-die "usage: $0   corpus   quasi_perm_file   kendall_table   openfst_loc   output_dir\n" unless @ARGV == 5;
-# ./create_lattice.pl corpus.en out.QuasiPerm out.expectedKendall openfst_loc out.lattices
+die "usage: $0   corpus   quasi_perm_file   kendall_table   max_paths_number   openfst_loc   output_dir\n" unless @ARGV == 6;
+# ./create_lattice.pl corpus.en out.QuasiPerm out.expectedKendall 1000 openfst_loc out.lattices
 
 
 sub MAIN{
-	my ($corpus, $quasi_perm_fn, $kendall_table, $openfst_loc, $output_dir) = @_;
+	my ($corpus, $quasi_perm_fn, $kendall_table, $max_paths, $openfst_loc, $output_dir) = @_;
 
-	my $n_to_select = 100000000000000000000000000000;
+	# my $max_paths = 100000000000000000000000000000;
 
 	my $tmp_dir = $output_dir.'/tmp';
 	my $fst_dir = $output_dir.'/weighted.openfst.lattice';
@@ -24,9 +24,8 @@ sub MAIN{
 	open my $kendall_fh, $kendall_table or die $!;
 
 	open my $out_moses_fh, ">$output_dir/weighted.moses.lattice" or die $!;
-	open my $out_permutation_fh, ">$output_dir/weighted.permutation.lattice" or die $!;
 
-	my @perms = ();
+	my %perms = ();
 
 	my @words = ();
 
@@ -38,21 +37,21 @@ sub MAIN{
 		my @newNums = map {($_ < 0)?$_+10000:$_} @nums;
 
 		if(defined $last_sent_id and $curr_sent_id != $last_sent_id){
-			process($last_sent_id, \@perms, $corpus_fh, $kendall_fh, $openfst_loc, $fst_dir, $tmp_dir, $out_moses_fh, $out_permutation_fh);
+			process($last_sent_id, [values %perms], $corpus_fh, $kendall_fh, $openfst_loc, $fst_dir, $tmp_dir, $out_moses_fh);
 
-			@perms = ();
+			%perms = ();
 		}
 
 		$last_sent_id = $curr_sent_id;
 
-		if(scalar(@perms)<$n_to_select){
-			push @perms, \@newNums;
+		if(scalar(keys %perms)<$max_paths){
+			my $str_desc = join(" ", @newNums);
+			$perms{$str_desc}=\@newNums;
 		}
 	}
-	process($last_sent_id, \@perms, $corpus_fh, $kendall_fh, $openfst_loc, $fst_dir, $tmp_dir, $out_moses_fh, $out_permutation_fh);
+	process($last_sent_id, [values %perms], $corpus_fh, $kendall_fh, $openfst_loc, $fst_dir, $tmp_dir, $out_moses_fh);
 
 	close $out_moses_fh;
-	close $out_permutation_fh;
 
 	close $quasi_fh;
 	close $corpus_fh;
@@ -60,9 +59,11 @@ sub MAIN{
 }
 
 sub process{
-	my ($sent_id, $perms, $corpus_fh, $kendall_fh, $openfst_loc, $fst_dir, $tmp_dir, $out_moses_fh, $out_permutation_fh) = @_;
+	#my ($sent_id, $perms, $corpus_fh, $kendall_fh, $openfst_loc, $fst_dir, $tmp_dir, $out_moses_fh, $out_permutation_fh) = @_;
+	my ($sent_id, $perms, $corpus_fh, $kendall_fh, $openfst_loc, $fst_dir, $tmp_dir, $out_moses_fh) = @_;
 
 	print STDERR "sent $sent_id started\n";
+	print STDERR "sent $sent_id ".scalar(@$perms)." paths\n";
 
 	my @words = nextCorpusLine($corpus_fh);
 	my $n = scalar(@words);
@@ -74,14 +75,22 @@ sub process{
 
 	print STDERR "sent $sent_id weighting...";
 	my $table = nextKendallTable($kendall_fh, $n);
-	createWeightedMinimalFST($sent_id, $fst_dir, $tmp_dir, $out_moses_fh, $out_permutation_fh, $table, $n);
+	createWeightedMinimalFST($sent_id, $fst_dir, $tmp_dir, $out_moses_fh, $table, $n);
 	print STDERR " done\n";
+
+	unlink("$tmp_dir/$sent_id.isyms");
+	unlink("$tmp_dir/$sent_id.osyms");
+	unlink("$tmp_dir/$sent_id.unweighted.determ.binary");
+	unlink("$tmp_dir/$sent_id.unweighted.min.binary");
+	unlink("$tmp_dir/$sent_id.unweighted.min.fst");
+	unlink("$tmp_dir/$sent_id.unweighted.raw.binary");
+	unlink("$tmp_dir/$sent_id.unweighted.raw.fst");
 
 	print STDERR "sent $sent_id finished\n";
 }
 
 sub createWeightedMinimalFST{
-	my ($sent_id, $fst_dir, $tmp_dir, $out_moses_fh, $out_permutation_fh, $table, $n) = @_;
+	my ($sent_id, $fst_dir, $tmp_dir, $out_moses_fh, $table, $n) = @_;
 	my $fst_fn = "$tmp_dir/$sent_id.unweighted.min.fst";
 	my %arcs = loadFST($fst_fn);
 	my %state_seen_words; # state => index => 1
@@ -122,24 +131,18 @@ sub createWeightedMinimalFST{
 		print $out_moses_fh "(";
 		for my $arc (@{$arcs{$state}}){
 			print $out_moses_fh "(";
-			print $out_moses_fh join(", ", "'".$arc->{tgt_label}."'", $arc->{score}, ($arc->{end}-$arc->{start}));
+			print $out_moses_fh join(", ",
+							"'".$arc->{tgt_label}."'",
+							"index=".$arc->{src_label},
+							"KTau=".$arc->{score},
+							"src_state=".$arc->{start},
+							"tgt_state=".$arc->{end},
+							($arc->{end}-$arc->{start}));
 			print $out_moses_fh "),";
 		}
 		print $out_moses_fh "),";
 	}
 	print $out_moses_fh "),\n";
-
-	print $out_permutation_fh "(";
-	for my $state (sort {$a <=> $b} keys %arcs){
-		print $out_permutation_fh "(";
-		for my $arc (@{$arcs{$state}}){
-			print $out_permutation_fh "(";
-			print $out_permutation_fh join(", ", $arc->{src_label}, $arc->{score}, ($arc->{end}-$arc->{start}));
-			print $out_permutation_fh "),";
-		}
-		print $out_permutation_fh "),";
-	}
-	print $out_permutation_fh "),\n";
 }
 
 sub loadFST{
