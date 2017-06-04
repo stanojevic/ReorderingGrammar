@@ -10,24 +10,7 @@ object Monotonize {
   private case class Config(
       sourceFN : String = "",
       alignmentFN : String = "",
-      // wordClassFile : String = null,
-      // outputPrefix : String = "",
-      // threads: Int = 1,
-      // batchEM: Boolean = true,
-      // binarySplits: Int = 10,
-      // narySplits  : Int = 1,
-      // onlineBatchSize : Int = 10000,
-      // threadBatchSize : Int = 1000,
-      // hardEMbestK : Int = -1,
-      // randomnessInEstimation : Double = 0.0,
-      // onlineAlpha:Double = 0.6,
-      // initGrammarFN : String = null,
-      // iterations : Int = 30,
-      // convergenceThreshold : Double = -1,
       attachLeft  : Boolean = true,
-      // attachRight : Boolean = true,
-      // attachTop   : Boolean = true,
-      // attachBottom: Boolean = true,
       simpleSprime : Boolean = false,
       
       outAlignmentsFN : String = null,
@@ -50,77 +33,10 @@ object Monotonize {
         c.copy(simpleSprime = x)
       } text ("no -- use standard minimal phrase reorderin, yes -- use average target position")
       
-      // opt[String]('c', "wordClassFile") action { (x, c) =>
-      //   c.copy(wordClassFile = x)
-      // }
-      
-      // opt[String]('o', "outputPrefix") required() action { (x, c) =>
-      //   c.copy(outputPrefix = x)
-      // }
-      
-      // opt[String]("binarySplits") required() action { (x, c) =>
-      //   c.copy(binarySplits = x.toInt)
-      // }
-      
-      // opt[String]("narySplits") required() action { (x, c) =>
-      //   c.copy(narySplits = x.toInt)
-      // }
-      
-      // opt[Int]('t', "threads") action { (x, c) =>
-      //   c.copy(threads = x)
-      // }
-      
-      // opt[String]('g', "initGrammarFN") action { (x, c) =>
-      //   c.copy(initGrammarFN = x)
-      // }
       
       opt[Boolean]("nullAttachLeft") action { (x, c) =>
         c.copy(attachLeft = x)
       } required()
-      
-      // opt[Boolean]("nullAttachRight") action { (x, c) =>
-      //   c.copy(attachRight = x)
-      // }
-      
-      // opt[Boolean]("nullAttachTop") action { (x, c) =>
-      //   c.copy(attachTop = x)
-      // }
-      
-      // opt[Boolean]("nullAttachBottom") action { (x, c) =>
-      //   c.copy(attachBottom = x)
-      // }
-      
-      // opt[Int]("hard_EM_best_K") action { (x, c) =>
-      //   c.copy(hardEMbestK = x)
-      // } text ("How many Kbest for hard EM iterations (first iteration is always soft EM; for <=0 only soft EM will be used always)")
-      
-      // opt[Double]("randomnessInEstimation") action { (x, c) =>
-      //   c.copy(randomnessInEstimation = x)
-      // }
-      
-      // opt[Int]('b', "threadBatchSize") action { (x, c) =>
-      //   c.copy(threadBatchSize = x)
-      // }
-      
-      // opt[Int]('i', "iterations") action { (x, c) =>
-      //   c.copy(iterations = x)
-      // }
-
-      // opt[Double]("convergenceThreshold") action { (x, c) =>
-      //   c.copy(convergenceThreshold = x)
-      // }
-      
-      // opt[Unit]("onlineEM") action { (_, c) =>
-      //   c.copy(batchEM = false)
-      // }
-      
-      // opt[Int]("onlineBatchSize") action { (x, c) =>
-      //   c.copy(onlineBatchSize = x)
-      // }
-      
-      // opt[Double]("onlineAlpha") action { (x, c) =>
-      //   c.copy(onlineAlpha = x)
-      // }
       
       opt[String]("outAlignments") action { (x, c) =>
         c.copy(outAlignmentsFN = x)
@@ -171,7 +87,7 @@ object Monotonize {
           PhrasePairExtractor.fakeAlignmentAndFakeWords(words, spans)
         }
         
-        val (newSent, newA) = do_fucking_reordering(phrasedWords, phrasedAlignments, config.attachLeft)
+        val (newSent, newA) = do_reordering(phrasedWords, phrasedAlignments, config.attachLeft)
         
         if(config.simpleSprime){
           outSentPW.println( newSent.mkString(" ") )
@@ -239,7 +155,7 @@ object Monotonize {
     }.toList.sortBy{_._2}.map{_._1}.zipWithIndex.toSet
   }
   
-  def do_fucking_reordering(
+  def do_reordering(
       phrasedWords:List[String], 
       a:Set[(Int, Int)], 
       attachLeft:Boolean) : (List[String], Set[(Int, Int)]) = {
@@ -292,7 +208,7 @@ object Monotonize {
     }
     
     
-    // find the fucking mapping
+    // find the mapping
     val oldPosToNewPosMapping =
       (0 to mapping.size-1).sortBy(mapping(_)).zipWithIndex.toMap
       

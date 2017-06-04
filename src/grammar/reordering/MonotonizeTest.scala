@@ -5,7 +5,7 @@ import org.scalatest.matchers.ShouldMatchers
 
 class MonotonizeTest extends FlatSpec with ShouldMatchers{
 
-  "fucking" should "not fail" in {
+  "reordering" should "not fail" in {
     val a = Set( (1,1), (1,2), (3,4), (6, 0))
     val s = List(
         "unaligned1",
@@ -44,7 +44,7 @@ class MonotonizeTest extends FlatSpec with ShouldMatchers{
     
     
     for(attachLeft <- List(true, false)){
-      val (newS, newA) = Monotonize.do_fucking_reordering(s, a, attachLeft)
+      val (newS, newA) = Monotonize.do_reordering(s, a, attachLeft)
       if(attachLeft){
         System.err.println(" newS: "+ newS.toList.sorted)
         System.err.println("goodS: "+goodS_left.toList.sorted)

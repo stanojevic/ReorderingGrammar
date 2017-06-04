@@ -108,7 +108,7 @@ object CYK {
               }else if(chart(location)(location).containsKey(g.unknownTag)){
                 g.unknownTag
               }else{
-                System.err.println("fuck fuck fuck")
+                System.err.println("oh no")
                 safeToInsert = false
                 g.unknown
               }
